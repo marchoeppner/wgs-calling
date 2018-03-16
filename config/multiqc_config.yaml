@@ -1,0 +1,5 @@
+extra_fn_clean_exts:
+    - _R1
+    - _R2
+report_comment: >
+    This report has been generated automatically by the IKMB WGS pipeline.
