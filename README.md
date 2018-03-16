@@ -1,9 +1,8 @@
 ![](images/ikmb_bfx_logo.png)
-`NOTE: This pipeline is under development. Most importantly, it is currently being prepared to transition to the new GATK4 workflow. Please use at your own risk until this message has been removed.`
 
 # IKMB WGS pipeline part 2
 
-This pipeline generates variant calls from genomic CRAM files. 
+This pipeline generates variant calls from genomic CRAM files. Please see the companion pipeline for generating the necessary read alignments here: http://git.ikmb.uni-kiel.de/bfx-core/NF-wgs-alignment
 
 Tools and versions:
 
