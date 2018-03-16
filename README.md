@@ -1,6 +1,6 @@
 ![](images/ikmb_bfx_logo.png)
 
-# IKMB WGS pipeline part 2
+# IKMB WGS variant calling  pipeline 
 
 This pipeline generates variant calls from genomic CRAM files. Please see the companion pipeline for generating the necessary read alignments here: http://git.ikmb.uni-kiel.de/bfx-core/NF-wgs-alignment
 
