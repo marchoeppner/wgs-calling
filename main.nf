@@ -213,12 +213,13 @@ process runRecalibrationModeSNP {
                	-O $recal_file \
                 --tranches-file $tranches \
 	        --rscript-file $rscript \
-		-an MQ -an MQRankSum -an ReadPosRankSum -an FS -an DP \
+		-an MQ -an MQRankSum -an ReadPosRankSum -an FS -an DP -an ReadPosRankSum -an InbreedingCoeff -an QD \
                 -mode SNP \
 		--resource hapmap,known=false,training=true,truth=true,prior=15.0:$HAPMAP \
 		--resource omni,known=false,training=true,truth=true,prior=12.0:$OMNI \
 		--resource 1000G,known=false,training=true,truth=false,prior=10.0:$G1K \
 		--resource dbsnp,known=true,training=false,truth=false,prior=2.0:$DBSNP \
+                -tranche 100.0 -tranche 99.9 -tranche 99.0 -tranche 90.0 \
   	"""
 }
 
@@ -258,10 +259,11 @@ process runRecalibrationModeIndel {
                	-O $recal_file \
        	        --tranches-file $tranches \
                 --rscript-file $rscript \
-               	-an MQRankSum -an SOR -an ReadPosRankSum -an FS -an DP \
+               	-an MQRankSum -an SOR -an ReadPosRankSum -an FS -an DP -an InbreedingCoeff -an MQ -an QD \
        	        -mode INDEL \
                 --resource mills,known=false,training=true,truth=true,prior=15.0:$GOLD1 \
                	--resource dbsnp,known=true,training=false,truth=false,prior=2.0:$DBSNP \
+                -tranche 100.0 -tranche 99.9 -tranche 99.0 -tranche 90.0 \
 	"""
 }
 
