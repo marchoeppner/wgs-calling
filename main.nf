@@ -49,13 +49,12 @@ log.info "========================================="
 log.info "GATK Best Practice for Genome-Seq calling v${VERSION}"
 log.info "Nextflow Version:		$workflow.nextflow.version"
 log.info "Assembly version:		${params.assembly}"
-log.info "Adapter sequence used:	${adapters}"
 log.info "Command Line:			$workflow.commandLine"
 log.info "========================================="
 
 Channel.from(inputFile)
        .splitCsv(sep: ';', header: true)
-       .set {  inputSplitter }
+       .set {  inputHCSample }
 
 // ------------------------------------------------------------------------------------------------------------
 // Haplotype Caller for raw genomic variants
@@ -64,12 +63,12 @@ Channel.from(inputFile)
 process runHCSample {
 
   tag "${indivID}|${params.assembly}|${region}"
-  publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/HaplotypeCaller/ByIntervalRegion", mode: 'copy'
+  // publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/HaplotypeCaller/ByIntervalRegion", mode: 'copy'
 
-  //scratch use_scratch
+  scratch use_scratch
 
   input:
-  set indivID,sampleID,file(bam),file(bai) from inputHCSample
+  set indivID,sampleID,bam,bai from inputHCSample
   each region from regions
 
   output:
@@ -127,7 +126,7 @@ process runGenomicsDBImport  {
 
 }
 
-// Perform genotyping on a per chromosome basis
+// Perform genotyping on a per interval basis
 
 process runJoinedGenotyping {
   
