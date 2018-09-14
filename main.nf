@@ -62,31 +62,28 @@ Channel.from(inputFile)
 
 process runHCSample {
 
-  tag "${indivID}|${params.assembly}|${region}"
-  // publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/HaplotypeCaller/ByIntervalRegion", mode: 'copy'
+  tag "${indivID}|${params.assembly}"
+  publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/HaplotypeCaller", mode: 'copy'
 
   scratch use_scratch
 
   input:
   set indivID,sampleID,bam,bai from inputHCSample
-  each region from regions
 
   output:
-  set region,file(vcf) into outputHCSample
-  set region,file(vcf_index) into outputHCSampleIndex
-  set indivID,sampleID,file(vcf) into inputMergeSamples
-  set indivID,sampleID,file(vcf_index) into inputMergeSamplesIndex
+  file(vcf) into inputGenomicsDb
+  file(vcf_index) into inputGenomicsDbIndex
 
   script:
 
-  vcf = indivID + "_" + sampleID + ".raw_variants.${region.replace(/:/, "_")}.g.vcf.gz"
+  vcf = indivID + "_" + sampleID + ".raw_variants.g.vcf.gz"
   vcf_index = vcf + ".tbi"
 
   """ 
-	gatk --java-options "-Xms32G -Xmx64G" HaplotypeCaller \
+	gatk --java-options "-Xms16G -Xmx${task.memory.toGiga()}G" HaplotypeCaller \
 		-R $REF \
 		-I $bam \
-		-L $region \
+		--intervals $INTERVALS \
 		-O $vcf \
 		-OVI true \
 		-ERC GVCF
@@ -94,22 +91,20 @@ process runHCSample {
 
 }
 
-vcfByRegion = outputHCSample.groupTuple(by: 0)
-vcfindexByRegion = outputHCSampleIndex.groupTuple(by: 0)
-
 // Import individual vcf files into a GenomicsDB database on a per chromosome basis
 // From here on all samples are in the same file
 process runGenomicsDBImport  {
 
 	tag "ALL|${params.assembly}|${region}"
-        publishDir "${OUTDIR}/${params.assembly}/Variants/JoinedGenotypes/PerRegion"
+        publishDir "${OUTDIR}/${params.assembly}/Variants/GenomicsDB"
 	
-	scratch use_scratch 
+	//scratch use_scratch 
 
 	input:
-        set region,file(vcf_list) from vcfByRegion
-	set region_index,file(index_list) from vcfindexByRegion
-
+        file(vcf_list) from inputGenomicsDb.collect()
+	file(index_list) from inputGenomicsDbIndex.collect()
+	each region from regions
+	
 	output:
         set region,file(genodb) into inputJoinedGenotyping
 
@@ -119,8 +114,10 @@ process runGenomicsDBImport  {
 	"""
 		gatk --java-options "-Xmx${task.memory.toGiga()}G" GenomicsDBImport  \
 		--variant ${vcf_list.join(" --variant ")} \
+		--batch-size 50 \
 		--reference $REF \
-		--intervals $region \
+		-L $region \
+		--reader-threads ${task.cpus} \
 		--genomicsdb-workspace-path $genodb
 	"""
 
@@ -131,7 +128,7 @@ process runGenomicsDBImport  {
 process runJoinedGenotyping {
   
 	tag "${region}"
-	// publishDir "${OUTDIR}/Variants/JoinedGenotypes/PerRegion"
+	publishDir "${OUTDIR}/${params.assembly}/Variants/JoinedGenotypes/PerRegion"
   
 	input:
 	set region,file(genodb) from inputJoinedGenotyping
@@ -158,7 +155,7 @@ process runJoinedGenotyping {
 
 process combineVariantsFromGenotyping {
 	tag "ALL"
-	publishDir "${OUTDIR}/Variants/JoinedGenotypes", mode: 'copy'
+	publishDir "${OUTDIR}/${params.assembly}/Variants/JoinedGenotypes", mode: 'copy'
 
 	input:
 	file(vcf_files) from inputCombineVariantsFromGenotyping.collect()
@@ -182,7 +179,7 @@ process combineVariantsFromGenotyping {
 process runRecalibrationModeSNP {
 
 	tag "ALL"
-	// publishDir "${OUTDIR}/Variants/Recal"
+	// publishDir "${OUTDIR}/${params.assembly}/Variants/Recal"
 
 	input:
 	file(vcf) from inputRecalSNP
@@ -225,7 +222,7 @@ process runRecalibrationModeSNP {
 process runRecalibrationModeIndel {
 
 	tag "ALL"
-	// publishDir "${OUTDIR}/Variants/Recal"
+	// publishDir "${OUTDIR}/${params.assembly}/Variants/Recal"
 
 	input:
 	file(vcf) from inputRecalIndel
@@ -269,7 +266,7 @@ process runRecalibrationModeIndel {
 process runRecalSNPApply {
 
 	tag "ALL"
-	// publishDir "${OUTDIR}/Variants/Filtered"
+	// publishDir "${OUTDIR}/${params.assembly}/Variants/Filtered"
 
 	input:
 	set file(recal_file),file(tranches),file(rscript),file(gvcf),file(gvcf_index) from inputRecalSNPApply
@@ -297,7 +294,7 @@ process runRecalSNPApply {
 process runRecalIndelApply {
 
 	tag "ALL"
-  	// publishDir "${OUTDIR}/Variants/Recal"
+  	// publishDir "${OUTDIR}/${params.assembly}/Variants/Recal"
 
 	input:
   	set file(recal_file),file(tranches),file(rscript),file(gvcf),file(gvcf_index) from inputRecalIndelApply
@@ -327,7 +324,7 @@ process runRecalIndelApply {
 process runVariantFiltrationIndel {
 
 	tag "ALL"
-	// publishDir "${OUTDIR}//Variants/Filtered"
+	// publishDir "${OUTDIR}/${params.assembly}/Variants/Filtered"
 
   	input:
 	set file(gvcf),file(gvcf_index) from outputRecalIndelApply
@@ -355,7 +352,7 @@ inputCombineVariants = outputVariantFiltrationIndel.mix(outputRecalSNPApply)
 process runCombineVariants {
 
 	tag "ALL"
-  	publishDir "${OUTDIR}/Variants/Final", mode: 'copy'
+  	publishDir "${OUTDIR}/${params.assembly}/Variants/Final", mode: 'copy'
 
 	input: 
     	set file(indel),file(snp) from inputCombineVariants.collect()
