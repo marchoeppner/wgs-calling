@@ -1,6 +1,6 @@
 #!/usr/bin/env nextflow
 
-inputFile = file(params.samples)
+FOLDER = file(params.folder)
 
 params.outdir = "genotypes"
 
@@ -24,7 +24,7 @@ GOLD1 = file(params.genomes[ params.assembly ].gold )
 OMNI = file(params.genomes[ params.assembly ].omni )
 HAPMAP = file(params.genomes[ params.assembly ].hapmap )
 AXIOM = file(params.genomes[ params.assembly ].axiom )
-INTERVALS = file(params.genomes[params.assembly ].intervals )
+INTERVALS = file(params.genomes[params.assembly ].interval_chunks )
 
 // Annotations to use for variant recalibration
 snp_recalibration_values = params.snp_recalibration_values 
@@ -41,17 +41,22 @@ use_scratch = params.scratch
 
 // Collect validated intervals for calling
 // drastically increases parallelism
-regions =  []
-file(INTERVALS).eachLine { line ->
-        elements = line.trim().split("\t")
-        seq = elements[0].trim()
-        from = elements[1]
-        to = elements[2]
-        if (seq =~ /^@.*/) {
-                // do nothing
-        } else {
-                regions << "${seq}:${from}-${to}"
-        }
+regions = []
+file(INTERVALS).eachFile() { file ->
+         regions << file
+}
+
+// Make sure the Nextflow version is current enough
+try {
+    if( ! nextflow.version.matches(">= $params.nextflow_required_version") ){
+        throw GroovyException('Nextflow version too old')
+    }
+} catch (all) {
+    log.error "====================================================\n" +
+              "  Nextflow version $params.nf_required_version required! You are running v$workflow.nextflow.version.\n" +
+              "  Pipeline execution will continue, but things may break.\n" +
+              "  Please run `nextflow self-update` to update Nextflow.\n" +
+              "============================================================"
 }
 
 logParams(params, "nextflow_parameters-gatk4_joint_genotyping.txt")
@@ -61,49 +66,18 @@ VERSION = "0.1"
 // Header log info
 log.info "========================================="
 log.info "GATK Best Practice for Genome-Seq calling v${VERSION}"
+log.info "Section: 			Joint Variant Calling"
 log.info "Nextflow Version:		$workflow.nextflow.version"
 log.info "Assembly version:		${params.assembly}"
 log.info "Command Line:			$workflow.commandLine"
 log.info "========================================="
 
-Channel.from(inputFile)
-       .splitCsv(sep: ';', header: true)
-       .set {  inputHCSample }
+inputDBImport = Channel.fromPath(FOLDER + "/*.vcf.gz")
 
 // ------------------------------------------------------------------------------------------------------------
 // Haplotype Caller for raw genomic variants
 // ------------------------------------------------------------------------------------------------------------
 
-process runHCSample {
-
-  tag "${indivID}|${params.assembly}"
-  publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/HaplotypeCaller", mode: 'copy'
-
-  scratch use_scratch
-
-  input:
-  set indivID,sampleID,bam,bai from inputHCSample
-
-  output:
-  file(vcf) into inputGenomicsDb
-  file(vcf_index) into inputGenomicsDbIndex
-
-  script:
-
-  vcf = indivID + "_" + sampleID + ".raw_variants.g.vcf.gz"
-  vcf_index = vcf + ".tbi"
-
-  """ 
-	gatk --java-options "-Xms16G -Xmx${task.memory.toGiga()}G" HaplotypeCaller \
-		-R $REF \
-		-I $bam \
-		--intervals $INTERVALS \
-		-O $vcf \
-		-OVI true \
-		-ERC GVCF
-  """  
-
-}
 
 // Import individual vcf files into a GenomicsDB database on a per chromosome basis
 // From here on all samples are in the same file
@@ -115,15 +89,15 @@ process runGenomicsDBImport  {
 	//scratch use_scratch 
 
 	input:
-        file(vcf_list) from inputGenomicsDb.collect()
-	file(index_list) from inputGenomicsDbIndex.collect()
+	set file(gvcf) from inputDBImport.collect()
 	each region from regions
 	
 	output:
         set region,file(genodb) into inputJoinedGenotyping
 
 	script:
-	genodb = "genodb_${region.replace(/:/, "_")}"
+ 	region_tag = region.toString.split("/")[-1].split("-")[0]	
+	genodb = "genodb_${region_tag}"
 
 	"""
 		gatk --java-options "-Xmx${task.memory.toGiga()}G" GenomicsDBImport  \
@@ -187,7 +161,7 @@ process combineVariantsFromGenotyping {
 
         def sorted_vcf = [ ]
 	regions.each { region -> 
-		region_tag = region.replace(/:/, "_")
+		region_tag = region.toString.split("/")[-1].split("-")[0]
 		sorted_vcf << vcf_files.find { it =~ /genotypes\.$region_tag\.g\.vcf\.gz/ }
 	}
 
@@ -224,12 +198,13 @@ process runRecalibrationModeSNP {
                 --tranches-file $tranches \
 	        --rscript-file $rscript \
 		-an ${snp_recalibration_values.join(' -an ')} \
+		--sample-every-Nth-variant ${params.downsampleFactor} \
                 -mode SNP \
 		--resource hapmap,known=false,training=true,truth=true,prior=15.0:$HAPMAP \
 		--resource omni,known=false,training=true,truth=true,prior=12.0:$OMNI \
 		--resource 1000G,known=false,training=true,truth=false,prior=10.0:$G1K \
 		--resource dbsnp,known=true,training=false,truth=false,prior=2.0:$DBSNP \
-                -tranche 100.0 -tranche 99.9 -tranche 99.0 -tranche 90.0 \
+                -tranche ${params.snp_recalibration_tranche_values.join(' -tranche ')} \
   	"""
 }
 
@@ -258,11 +233,12 @@ process runRecalibrationModeIndel {
        	        --tranches-file $tranches \
                 --rscript-file $rscript \
 		-an ${indel_recalbration_values.join(' -an ')} \
+		--trust-all-polymorphic \
        	        -mode INDEL \
                 --resource mills,known=false,training=true,truth=true,prior=15.0:$GOLD1 \
 		--resource axiomPoly,known=false,training=true,truth=false,prior=10:$AXIOM \
                	--resource dbsnp,known=true,training=false,truth=false,prior=2.0:$DBSNP \
-                -tranche 100.0 -tranche 99.9 -tranche 99.0 -tranche 90.0 \
+		-tranche ${params.indel_recalibration_tranche_values.join(' -tranche ')} \
 	"""
 }
 
@@ -318,6 +294,8 @@ process runRecalSNPApply {
 			-V $gvcf \
 		        --recal-file $recal_file \
                 	--tranches-file $tranches \
+			--trust-all-polymorphic \
+			--sample-every-Nth-variant ${params.downsampleFactor} \
 			-mode SNP \
 			--ts-filter-level 99.0 \
 			-O $vcf_recalibrated

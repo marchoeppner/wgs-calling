@@ -19,7 +19,7 @@ if (params.genomes.containsKey(params.assembly) == false) {
 
 REF = file(params.genomes[ params.assembly ].fasta)
 DBSNP = file(params.genomes[ params.assembly ].dbsnp )
-INTERVALS = file(params.genomes[params.assembly ].intervals )
+INTERVALS = file(params.genomes[params.assembly ].interval_chunks )
 
 // ******************
 // Misc
@@ -32,17 +32,22 @@ use_scratch = params.scratch
 
 // Collect validated intervals for calling
 // drastically increases parallelism
-regions =  []
-file(INTERVALS).eachLine { line ->
-	elements = line.trim().split("\t")
-	seq = elements[0].trim()
-	from = elements[1]
-	to = elements[2]
-	if (seq =~ /^@.*/) {
-		// do nothing
-	} else {
-		regions << "${seq}:${from}-${to}"
-	}
+regions = [] 
+file(INTERVALS).eachFile() { file ->
+	 regions << file
+}
+
+// Make sure the Nextflow version is current enough
+try {
+    if( ! nextflow.version.matches(">= $params.nextflow_required_version") ){
+        throw GroovyException('Nextflow version too old')
+    }
+} catch (all) {
+    log.error "====================================================\n" +
+              "  Nextflow version $params.nf_required_version required! You are running v$workflow.nextflow.version.\n" +
+              "  Pipeline execution will continue, but things may break.\n" +
+              "  Please run `nextflow self-update` to update Nextflow.\n" +
+              "============================================================"
 }
 
 logParams(params, "nextflow_parameters_gatk4-haplotypecaller.txt")
@@ -52,6 +57,7 @@ VERSION = "0.1"
 // Header log info
 log.info "========================================="
 log.info "GATK Best Practice for Genome-Seq calling v${VERSION}"
+log.info "Section:             		HaplotypeCaller"
 log.info "Nextflow Version:		$workflow.nextflow.version"
 log.info "Assembly version:		${params.assembly}"
 log.info "Command Line:			$workflow.commandLine"
@@ -67,7 +73,7 @@ Channel.from(inputFile)
 
 process runHCSample {
 
-  tag "${indivID}|${params.assembly}|${region}"
+  tag "${indivID}|${params.assembly}|${region_tag}"
   publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/HaplotypeCaller", mode: 'copy'
 
   scratch use_scratch
@@ -80,7 +86,7 @@ process runHCSample {
   set indivID,sampleID,file(vcf),file(vcf_index),region into inputCombineVariants
 
   script:
-  region_tag = region.replace(/:/, "_")
+  region_tag = region.getName().split("-")[0]
   vcf = indivID + "_" + sampleID + "." + region_tag + ".raw_variants.g.vcf.gz"
   vcf_index = vcf + ".tbi"
 
@@ -114,7 +120,7 @@ process combineVariants {
 
         def sorted_vcf = [ ]
 	regions.each { region -> 
-		region_tag = region.replace(/:/, "_")
+		region_tag = region.getName().split("-")[0]
 		sorted_vcf << vcf_files.find { it =~ /genotypes\.$region_tag\.g\.vcf\.gz/ }
 	}
 

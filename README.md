@@ -2,11 +2,11 @@
 
 # IKMB WGS variant calling  pipeline 
 
-This pipeline generates variant calls from genomic CRAM files. Please see the companion pipeline for generating the necessary read alignments here: http://git.ikmb.uni-kiel.de/bfx-core/NF-wgs-alignment
+This pipeline generates variant calls from short read files. 
 
 Tools and versions:
 
-GATK 4.0.1.2
+GATK 4.0.9.0
 Samtools 1.5
 
 ## Running the pipeline
@@ -15,11 +15,13 @@ First you must clone the repository to a location visible from your cluster:
 
 `git clone http://git.ikmb.uni-kiel.de/bfx-core/NF-wgs-calling`
 
+The pipeline consists, for practical reasons, of three independent workflows: read alignment (produces a WGS cram), haplotype calling (produces a GVCF) and finally joint genotyping (produces a final VCF). 
+
 You can now run the pipeline like so:
 
-`nextflow -c path_to_repo/nextflow.config run path_to_repo/main.nf --samples samples.csv`
+`nextflow -c path_to_repo/nextflow.config run path_to_repo/gatk-alignment.nf --samples Samples.csv`
 
-where `samples.csv` contains information on the input data (see section "Sample sheet").
+where `Samples.csv` contains information on the input data (see section "Sample sheet").
 
 ## Valid assemblies
 
@@ -31,20 +33,24 @@ This pipeline supports two reference assemblies:
 
 Variants for both assemblies are only called in pre-defined intervals, limited to the canonical chromosomes and skipping regions such as centromeres etc. 
 
-You MUST choose the same assembly as the one that was used for generating the alignments, obviously. 
+Obviously, you should choose the same assembly for all steps of the pipeline. 
 
 ## Sample sheet
 
-In order to keep track of all relevant information (individual id, sample id, library id etc), the pipeline requires a CSV-formatted sample sheet as input:
+Each pipeline requires a specific samplesheet. Scripts are included under bin/ that can produce compliant inputs from a folder that contains relevant data.
 
-  * INDIVIDUAl_ID - The ID of the individual from which the sample was derived.
-  * SAMPLE_ID - The ID of the sample. Note that more than one sample can come from the same individual (e.g. tumor/normal pair)
-  * BAM - Full path to read alignment
-  * BAI - Full path to read alignment index
+### gatk4-alignment.nf
+bin/samplesheet_from_folder.rb -f /path/to/fastq
+
+### gatk4-haplotype-caller.nf
+bin/samplesheet_from_cram.rb -f /path/to/cram
+
+### gatk4-joint-genotyping.nf 
+bin/samplesheet_from_gvcf.rb -f path/to/gvcf
 
 ## Outputs
 
-Unless specified otherwise (using the flag `--outdir SOME_LOCATION`), all data will be written to the folder "output". All relevant data inside will be sorted by Individual ID, sample ID and library ID (in that order). 
+Each pipeline create an output directory: alignment, gvcf and genotypes
 
 ## Reporting
 

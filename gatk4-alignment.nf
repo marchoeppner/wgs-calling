@@ -55,11 +55,17 @@ three_prime_clip_r2 = params.three_prime_clip_r2
 // Whether to use a local scratch disc
 use_scratch = params.scratch
 
-// Collect validated intervals for calling
-// drastically increases parallelism
-regions =  []
-file(INTERVALS).eachLine { line ->
-	regions << line.trim()
+// Make sure the Nextflow version is current enough
+try {
+    if( ! nextflow.version.matches(">= $params.nextflow_required_version") ){
+        throw GroovyException('Nextflow version too old')
+    }
+} catch (all) {
+    log.error "====================================================\n" +
+              "  Nextflow version $params.nf_required_version required! You are running v$workflow.nextflow.version.\n" +
+              "  Pipeline execution will continue, but things may break.\n" +
+              "  Please run `nextflow self-update` to update Nextflow.\n" +
+              "============================================================"
 }
 
 logParams(params, "nextflow_parameters-gatk4_alignment.txt")
@@ -69,6 +75,7 @@ VERSION = "0.2"
 // Header log info
 log.info "========================================="
 log.info "GATK Best Practice for Genome-Seq Preprocessing v${VERSION}"
+log.info "Section:             		Read alignment"
 log.info "Commit hash:			$workflow.commitId"
 log.info "Nextflow Version:		$workflow.nextflow.version"
 log.info "Assembly version:		${params.assembly}"
@@ -150,7 +157,7 @@ process runTrimgalore {
 process runBwa {
 
     tag "${indivID}|${sampleID}|${libraryID}|${rgID}|${chunk}|${params.assembly}"
-    publishDir "${OUTDIR}/${indivID}/${sampleID}/Processing/Libraries/${libraryID}/${rgID}/BWA/"
+    // publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/Processing/Libraries/${libraryID}/${rgID}/BWA/"
 
     //scratch use_scratch
 
@@ -173,7 +180,7 @@ runBWAOutput_grouped_by_sample = runBWAOutput.groupTuple(by: [0,1])
 
 process runMergeCram {
     tag "${indivID}|${sampleID}|${params.assembly}"
-    publishDir "${OUTDIR}/${indivID}/${sampleID}/Processing/MergeAlignments"
+    publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/Processing/MergeAlignments"
 
    //scratch use_scratch
 
@@ -197,7 +204,7 @@ process runMergeCram {
 process runMarkDuplicates {
 
     tag "${indivID}|${sampleID}|${params.assembly}"
-    // publishDir "${OUTDIR}/${indivID}/${sampleID}/Processing/MarkDuplicates", mode: 'copy'
+    // publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/Processing/MarkDuplicates", mode: 'copy'
 
     //scratch use_scratch
 
@@ -253,6 +260,8 @@ process runBaseRecalibrator {
 		--known-sites ${GOLD1} \
 		--known-sites ${DBSNP} \
                 --known-sites ${G1K} \
+		-L $INTERVALS \
+		-ip 500 \
 		--output ${recal_table}
 	"""
 }
@@ -282,7 +291,7 @@ process runApplyBQSR {
              -bqsr ${recal_table} \
              --output ${outfile_bam} \
              -OBM true
-    	"""
+    	"""	
 } 
 
 
