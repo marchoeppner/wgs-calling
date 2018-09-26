@@ -2,6 +2,8 @@
 
 inputFile = file(params.samples)
 
+params.outdir = "genotypes"
+
 OUTDIR = file(params.outdir)
 
 // Specifies the underlying genome assembly
@@ -23,7 +25,6 @@ OMNI = file(params.genomes[ params.assembly ].omni )
 HAPMAP = file(params.genomes[ params.assembly ].hapmap )
 AXIOM = file(params.genomes[ params.assembly ].axiom )
 INTERVALS = file(params.genomes[params.assembly ].intervals )
-DICT = file(params.genomes[params.assembly ].dict )
 
 // Annotations to use for variant recalibration
 snp_recalibration_values = params.snp_recalibration_values 
@@ -42,10 +43,18 @@ use_scratch = params.scratch
 // drastically increases parallelism
 regions =  []
 file(INTERVALS).eachLine { line ->
-	regions << line.trim()
+        elements = line.trim().split("\t")
+        seq = elements[0].trim()
+        from = elements[1]
+        to = elements[2]
+        if (seq =~ /^@.*/) {
+                // do nothing
+        } else {
+                regions << "${seq}:${from}-${to}"
+        }
 }
 
-logParams(params, "nextflow_parameters.txt")
+logParams(params, "nextflow_parameters-gatk4_joint_genotyping.txt")
 
 VERSION = "0.1"
 
@@ -178,8 +187,8 @@ process combineVariantsFromGenotyping {
 
         def sorted_vcf = [ ]
 	regions.each { region -> 
-		tag = region.replace(/:/, "_")
-		sorted_vcf << vcf_files.find { it =~ /genotypes\.$tag\.g\.vcf\.gz/ }
+		region_tag = region.replace(/:/, "_")
+		sorted_vcf << vcf_files.find { it =~ /genotypes\.$region_tag\.g\.vcf\.gz/ }
 	}
 
 	"""
@@ -200,7 +209,7 @@ process runRecalibrationModeSNP {
 	set file(vcf),file(index) from inputRecalSNP
 
 	output:
-  	set file(recal_file),file(tranches),file(rscript) into inputRecalSNPApply
+  	set file(recal_file),file(tranches) into inputRecalSNPApply
 
 	script:
 	recal_file = "genotypes.recal_SNP.recal"
@@ -233,7 +242,7 @@ process runRecalibrationModeIndel {
 	file(vcf),file(index) from inputRecalIndel
 
 	output:
-	set file(recal_file),file(tranches),file(rscript),file(vcf),file(index) into inputRecalIndelApply
+	set file(recal_file),file(tranches),file(vcf),file(index) into inputRecalIndelApply
 
 	script:
 
@@ -262,7 +271,7 @@ process runRecalIndelApply {
         // publishDir "${OUTDIR}/${params.assembly}/Variants/Recal"
 
         input:
-        set file(recal_file),file(tranches),file(rscript),file(gvcf),file(gvcf_index) from inputRecalIndelApply
+        set file(recal_file),file(tranches),file(gvcf),file(gvcf_index) from inputRecalIndelApply
 
         output:
         set file(vcf_indel),file(vcf_indel_index) into VcfRecalSNPApply
@@ -292,7 +301,7 @@ process runRecalSNPApply {
 	publishDir "${OUTDIR}/${params.assembly}/Variants/Filtered"
 
 	input:
-	set file(recal_file),file(tranches),file(rscript) from inputRecalSNPApply
+	set file(recal_file),file(tranches) from inputRecalSNPApply
         set file(vcf_indel),file(vcf_indel_index) from VcfRecalSNPApply
 
 	output:
