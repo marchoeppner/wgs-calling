@@ -1,5 +1,7 @@
 ![](images/ikmb_bfx_logo.png)
 
+DISCLAIMER: This pipeline is not currently documented enough for just anyone to run it. There are certain prerequisites that need to be set up somehwat manually. If there is interest to use this, please get in touch. 
+
 # IKMB WGS variant calling  pipeline 
 
 This pipeline generates variant calls from short read files. 
@@ -37,7 +39,7 @@ Obviously, you should choose the same assembly for all steps of the pipeline.
 
 ## Sample sheet
 
-Each pipeline requires a specific samplesheet. Scripts are included under bin/ that can produce compliant inputs from a folder that contains relevant data.
+Pipeline 1+2 require a specific samplesheet. Scripts are included under bin/ that can produce compliant inputs from a folder that contains relevant data.
 
 ### gatk4-alignment.nf
 bin/samplesheet_from_folder.rb -f /path/to/fastq
@@ -46,7 +48,7 @@ bin/samplesheet_from_folder.rb -f /path/to/fastq
 bin/samplesheet_from_cram.rb -f /path/to/cram
 
 ### gatk4-joint-genotyping.nf 
-bin/samplesheet_from_gvcf.rb -f path/to/gvcf
+This pipeline starts off a folder with GVCF files and their indices (.tbi). This is produced by the previous pipeline, in subfolder "HC"
 
 ## Outputs
 

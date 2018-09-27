@@ -117,7 +117,7 @@ process runGenomicsDBImport  {
 
 // Perform genotyping on a per interval basis
 
-process runJoinedGenotyping {
+process runGenotypeGVCFs {
   
 	tag "ALL|${params.assembly}|batch: ${region_tag}"
 	publishDir "${OUTDIR}/${params.assembly}/Variants/JoinedGenotypes/PerRegion"

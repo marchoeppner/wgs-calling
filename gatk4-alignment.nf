@@ -23,6 +23,7 @@ DBSNP = file(params.genomes[ params.assembly ].dbsnp )
 G1K = file(params.genomes[ params.assembly ].g1k )
 GOLD1 = file(params.genomes[ params.assembly ].gold )
 INTERVALS = file(params.genomes[params.assembly ].intervals )
+INTERVAL_CHUNKS = file(params.genomes[params.assembly ].interval_chunks )
 
 // *******************
 // Tools
@@ -54,6 +55,14 @@ three_prime_clip_r2 = params.three_prime_clip_r2
 
 // Whether to use a local scratch disc
 use_scratch = params.scratch
+
+// Collect validated intervals for calling
+// drastically increases parallelism
+regions = []
+file(INTERVAL_CHUNKS).eachFile() { file ->
+         regions << file
+}
+regions.sort()
 
 // Make sure the Nextflow version is current enough
 try {
@@ -214,6 +223,7 @@ process runMarkDuplicates {
     
     output:
     set indivID, sampleID, file(outfile_bam),file(outfile_bai) into runMarkDuplicatesOutput
+    
     file(outfile_metrics) into runMarkDuplicatesOutput_QC
     file(outfile_md5) into MarkDuplicatesMD5
     
@@ -241,19 +251,22 @@ process runMarkDuplicates {
 // Generate a model for base recalibration within target intervals
 process runBaseRecalibrator {
 
-	tag "${indivID}|${sampleID}|${params.assembly}"
-    	// publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/Processing/BaseRecalibrator/", mode: 'copy'
+	tag "${indivID}|${sampleID}|${params.assembly}|batch: ${region_tag}"
+    	// publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/Processing/BaseRecalibrator/batches", mode: 'copy'
 
     	scratch use_scratch
 	    
     	input:
     	set indivID, sampleID, dedup_bam, dedup_bai from runMarkDuplicatesOutput
+	each region from  regions
     
     	output:
-    	set indivID, sampleID, dedup_bam, file(recal_table) into runBaseRecalibratorOutput
+    	set indivID, sampleID, file(recal_table) into outputBaseRecalibrator
+	set indivID, sampleID, dedup_bam into BamForBQSR
     
     	script:
-    	recal_table = sampleID + "_recal_table.txt" 
+        region_tag = region.getName().split("-")[0]
+    	recal_table = sampleID + "." + region_tag + ".recal_table.txt" 
        
     	"""
 		gatk --java-options "-Xmx${task.memory.toGiga()}G" BaseRecalibrator \
@@ -262,11 +275,42 @@ process runBaseRecalibrator {
 		--known-sites ${GOLD1} \
 		--known-sites ${DBSNP} \
                 --known-sites ${G1K} \
-		-L $INTERVALS \
+		-L $region \
 		-ip 500 \
 		--output ${recal_table}
 	"""
 }
+
+ReportsBySample = outputBaseRecalibrator.groupTuple(by: [0,1])
+
+process runGatherBQSRReports {
+
+	tag "${indivID}|${sampleID}|${params.assembly}|ALL"
+        // publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/Processing/BaseRecalibrator/"
+
+	input:
+	set indivID,sampleID,file(reports) from ReportsBySample
+
+	output:
+	set indivID,sampleID,file(merged_report) into MergedReport
+
+	script:
+	sorted_reports = []
+	regions.each { region ->
+                region_tag = region.getName().split("-")[0]
+                this_report = sampleID + "." + region_tag + ".recal_table.txt" 
+                sorted_reports << reports.find { it =~ this_report }
+        }	
+	merged_report = indivID + "_" + sampleID + ".recal_table.txt"
+
+	"""
+		gatk --java-options "-Xmx${task.memory.toGiga()}G" GatherBQSRReports \
+		-I ${sorted_reports.join(' -I ')} \
+		-O $merged_report 
+	"""
+}
+
+inputForApplyBQSR = MergedReport.join(BamForBQSR, by: [0,1])
 
 process runApplyBQSR {
 
@@ -276,7 +320,7 @@ process runApplyBQSR {
 	scratch use_scratch
 	    
 	input:
-	set indivID, sampleID, realign_bam, recal_table from runBaseRecalibratorOutput 
+	set indivID, sampleID, file(recal_table), file(realign_bam) from inputForApplyBQSR
 
 	output:
 	set indivID, sampleID, file(outfile_bam), file(outfile_bai) into BamForWGSStats
@@ -290,6 +334,8 @@ process runApplyBQSR {
           gatk --java-options "-Xmx${task.memory.toGiga()}G" ApplyBQSR \
              --reference ${REF} \
              --input ${realign_bam} \
+	     -L $INTERVALS \
+	     -ip 500 \
              -bqsr ${recal_table} \
              --output ${outfile_bam} \
              -OBM true \
