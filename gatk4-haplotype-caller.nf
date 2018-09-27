@@ -19,7 +19,8 @@ if (params.genomes.containsKey(params.assembly) == false) {
 
 REF = file(params.genomes[ params.assembly ].fasta)
 DBSNP = file(params.genomes[ params.assembly ].dbsnp )
-INTERVALS = file(params.genomes[params.assembly ].interval_chunks )
+INTERVALS = file(params.genomes[params.assembly ].intervals )
+INTERVAL_CHUNKS = file(params.genomes[params.assembly ].interval_chunks )
 
 // ******************
 // Misc
@@ -33,9 +34,10 @@ use_scratch = params.scratch
 // Collect validated intervals for calling
 // drastically increases parallelism
 regions = [] 
-file(INTERVALS).eachFile() { file ->
+file(INTERVAL_CHUNKS).eachFile() { file ->
 	 regions << file
 }
+regions.sort()
 
 // Make sure the Nextflow version is current enough
 try {
@@ -73,7 +75,7 @@ Channel.from(inputFile)
 
 process runHCSample {
 
-  tag "${indivID}|${params.assembly}|${region_tag}"
+  tag "${indivID}|${params.assembly}|batch: ${region_tag}"
   publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/HaplotypeCaller", mode: 'copy'
 
   scratch use_scratch
@@ -83,7 +85,7 @@ process runHCSample {
   each region from regions
 
   output:
-  set indivID,sampleID,file(vcf),file(vcf_index),region into inputCombineVariants
+  set indivID,sampleID,file(vcf),file(vcf_index) into inputCombineVariants
 
   script:
   region_tag = region.getName().split("-")[0]
@@ -118,10 +120,13 @@ process combineVariants {
 	gvcf = indivID + "_" + sampleID + ".g.vcf.gz"
 	gvcf_index = gvcf + ".tbi"
 
+	// The interval files are numbered based on their correct genomic order. We can use this
+	// to sort the partial gvcfs into the correct order for merging
         def sorted_vcf = [ ]
 	regions.each { region -> 
 		region_tag = region.getName().split("-")[0]
-		sorted_vcf << vcf_files.find { it =~ /genotypes\.$region_tag\.g\.vcf\.gz/ }
+		this_vcf = indivID + "_" + sampleID + "." + region_tag + ".raw_variants.g.vcf.gz"
+		sorted_vcf << vcf_files.find { it =~ this_vcf }
 	}
 
 	"""

@@ -124,7 +124,7 @@ chunksMap
 
 process runTrimgalore {
 
-        tag "${indivID}|${sampleID}"
+        tag "${indivID}|${sampleID}|batch: ${chunk}"
         publishDir "${OUTDIR}/trimgalore", mode: 'copy',
                 saveAs: {filename ->
                 if (filename.indexOf("_fastqc") > 0) "FastQC/$filename"
@@ -152,11 +152,10 @@ process runTrimgalore {
         """
 }
 
-// Merge the chunks back into one fq and rev fastq file for FastQC analysis
-
+// Run BWA on each trimmed chunk
 process runBwa {
 
-    tag "${indivID}|${sampleID}|${libraryID}|${rgID}|${chunk}|${params.assembly}"
+    tag "${indivID}|${sampleID}|${libraryID}|${rgID}|batch: ${chunk}|${params.assembly}"
     // publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/Processing/Libraries/${libraryID}/${rgID}/BWA/"
 
     //scratch use_scratch
@@ -178,6 +177,7 @@ process runBwa {
 
 runBWAOutput_grouped_by_sample = runBWAOutput.groupTuple(by: [0,1])
 
+// Merge chunked alignments into single file per sample/individual
 process runMergeCram {
     tag "${indivID}|${sampleID}|${params.assembly}"
     publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/Processing/MergeAlignments"
@@ -201,6 +201,7 @@ process runMergeCram {
    
 }
 
+// Mark duplicate reads. This uses a discontinuted implementation of MD to fully leverage CRAM format
 process runMarkDuplicates {
 
     tag "${indivID}|${sampleID}|${params.assembly}"
@@ -237,6 +238,7 @@ process runMarkDuplicates {
         """
 }
 
+// Generate a model for base recalibration within target intervals
 process runBaseRecalibrator {
 
 	tag "${indivID}|${sampleID}|${params.assembly}"
@@ -269,7 +271,7 @@ process runBaseRecalibrator {
 process runApplyBQSR {
 
 	tag "${indivID}|${sampleID}|${params.assembly}"
-	publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/", mode: 'copy'
+	publishDir "${OUTDIR}/${params.assembly}/CRAM_FINAL", mode: 'copy'
 
 	scratch use_scratch
 	    
@@ -290,7 +292,8 @@ process runApplyBQSR {
              --input ${realign_bam} \
              -bqsr ${recal_table} \
              --output ${outfile_bam} \
-             -OBM true
+             -OBM true \
+	     -OVM true
     	"""	
 } 
 

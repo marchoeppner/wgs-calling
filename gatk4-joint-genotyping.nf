@@ -24,7 +24,8 @@ GOLD1 = file(params.genomes[ params.assembly ].gold )
 OMNI = file(params.genomes[ params.assembly ].omni )
 HAPMAP = file(params.genomes[ params.assembly ].hapmap )
 AXIOM = file(params.genomes[ params.assembly ].axiom )
-INTERVALS = file(params.genomes[params.assembly ].interval_chunks )
+INTERVALS = file(params.genomes[params.assembly ].intervals )
+INTERVAL_CHUNKS = file(params.genomes[params.assembly ].interval_chunks )
 
 // Annotations to use for variant recalibration
 snp_recalibration_values = params.snp_recalibration_values 
@@ -42,9 +43,10 @@ use_scratch = params.scratch
 // Collect validated intervals for calling
 // drastically increases parallelism
 regions = []
-file(INTERVALS).eachFile() { file ->
+file(INTERVAL_CHUNKS).eachFile() { file ->
          regions << file
 }
+regions.sort()
 
 // Make sure the Nextflow version is current enough
 try {
@@ -72,7 +74,8 @@ log.info "Assembly version:		${params.assembly}"
 log.info "Command Line:			$workflow.commandLine"
 log.info "========================================="
 
-inputDBImport = Channel.fromPath(FOLDER + "/*.vcf.gz")
+GVCF = Channel.fromPath(FOLDER + "/*.g.vcf.gz")
+GVCF_INDICES = Channel.fromPath(FOLDER + "/*.g.vcf.gz.tbi")
 
 // ------------------------------------------------------------------------------------------------------------
 // Haplotype Caller for raw genomic variants
@@ -83,29 +86,29 @@ inputDBImport = Channel.fromPath(FOLDER + "/*.vcf.gz")
 // From here on all samples are in the same file
 process runGenomicsDBImport  {
 
-	tag "ALL|${params.assembly}|${region}"
+	tag "ALL|${params.assembly}|batch: ${region_tag}"
         publishDir "${OUTDIR}/${params.assembly}/Variants/GenomicsDB"
 	
 	//scratch use_scratch 
 
 	input:
-	set file(gvcf) from inputDBImport.collect()
+	file(vcf_list) from GVCF.collect()
+	file(indices) from GVCF_INDICES.collect()
+
 	each region from regions
 	
 	output:
         set region,file(genodb) into inputJoinedGenotyping
 
 	script:
- 	region_tag = region.toString.split("/")[-1].split("-")[0]	
+ 	region_tag = region.getName().split("-")[0]	
 	genodb = "genodb_${region_tag}"
 
 	"""
 		gatk --java-options "-Xmx${task.memory.toGiga()}G" GenomicsDBImport  \
 		--variant ${vcf_list.join(" --variant ")} \
-		--batch-size 50 \
 		--reference $REF \
 		-L $region \
-		--reader-threads ${task.cpus} \
 		-ip 500 \
 		--genomicsdb-workspace-path $genodb
 	"""
@@ -116,7 +119,7 @@ process runGenomicsDBImport  {
 
 process runJoinedGenotyping {
   
-	tag "${region}"
+	tag "ALL|${params.assembly}|batch: ${region_tag}"
 	publishDir "${OUTDIR}/${params.assembly}/Variants/JoinedGenotypes/PerRegion"
   
 	input:
@@ -126,8 +129,8 @@ process runJoinedGenotyping {
 	file(gvcf) into inputCombineVariantsFromGenotyping
   
 	script:
-  
-	gvcf = "genotypes.${region.replace(/:/, "_")}.g.vcf.gz"
+        region_tag = region.getName().split("-")[0]  
+	gvcf = "genotypes.${region_tag}.g.vcf.gz"
   
 	"""
  	gatk --java-options "-Xmx${task.memory.toGiga()}G" GenotypeGVCFs \
@@ -153,7 +156,7 @@ process combineVariantsFromGenotyping {
 	file(vcf_files) from inputCombineVariantsFromGenotyping.collect()
 
 	output:
-	file(gvcf,gvcf_index) into (inputRecalSNP , inputRecalIndel )
+	set file(gvcf),file(gvcf_index) into (inputRecalSNP , inputRecalIndel )
 
 	script:
 	gvcf = "genotypes.merged.vcf.gz"
@@ -161,8 +164,9 @@ process combineVariantsFromGenotyping {
 
         def sorted_vcf = [ ]
 	regions.each { region -> 
-		region_tag = region.toString.split("/")[-1].split("-")[0]
-		sorted_vcf << vcf_files.find { it =~ /genotypes\.$region_tag\.g\.vcf\.gz/ }
+		region_tag = region.getName().split("-")[0]
+		this_vcf = "genotypes.${region_tag}.g.vcf.gz"
+		sorted_vcf << vcf_files.find { it =~ this_vcf }
 	}
 
 	"""
@@ -214,7 +218,7 @@ process runRecalibrationModeIndel {
 	// publishDir "${OUTDIR}/${params.assembly}/Variants/Recal"
 
 	input:
-	file(vcf),file(index) from inputRecalIndel
+	set file(vcf),file(index) from inputRecalIndel
 
 	output:
 	set file(recal_file),file(tranches),file(vcf),file(index) into inputRecalIndelApply
@@ -305,17 +309,18 @@ process runRecalSNPApply {
 process runVariantFiltrationIndel {
 
 	tag "ALL"
-	// publishDir "${OUTDIR}/${params.assembly}/Variants/Filtered"
+	publishDir "${OUTDIR}/${params.assembly}/Variants/Filtered"
 
   	input:
 	set file(gvcf),file(gvcf_index) from inputFilterIndel
 
   	output:
-  	file(filtered_gvcf) into inputLeftNormalize
+  	set file(filtered_gvcf),file(filtered_gvcf_index) into inputCollectMetrics
 
   	script:
 
   	filtered_gvcf = "genotypes.recal_Indel.recal_SNP.filtered.vcf.gz"
+	filtered_gvcf_index = filtered_gvcf + ".tbi"
 
 	"""
 		gatk --java-options "-Xmx${task.memory.toGiga()}G" VariantFiltration \
@@ -328,6 +333,31 @@ process runVariantFiltrationIndel {
   	"""
 }
 
+process runCollectVariantCallingMetrics {
+
+	tag "ALL"
+        publishDir "${OUTDIR}/${params.assembly}/Variants/QC"
+
+	input:
+        set file(filtered_gvcf),file(filtered_gvcf_index) from inputCollectMetrics
+
+	output:
+	file(report) into outputCallingMetrics
+
+	script:
+	metrics = "variant_call_metrics.txt"
+
+	"""
+		gatk --java-options "-Xmx${task.memory.toGiga()}G" CollectVariantCallingMetrics \
+		-I ${filered_gvcf} \
+		-O $metrics \
+		-TI $INTERVALS \
+		--DBSNP $DBSNP
+	"""
+	
+}
+
+
 workflow.onComplete {
   log.info "========================================="
   log.info "Duration:		$workflow.duration"
@@ -336,7 +366,7 @@ workflow.onComplete {
 
 if (params.email) {
 	workflow.onComplete {
-	    def subject = 'WGS alignment finished.'
+	    def subject = 'WGS joint calling finished.'
 	    def recipient = params.email
 
 	    ['mail', '-s', subject, recipient].execute() << """

@@ -17,11 +17,11 @@ First you must clone the repository to a location visible from your cluster:
 
 The pipeline consists, for practical reasons, of three independent workflows: read alignment (produces a WGS cram), haplotype calling (produces a GVCF) and finally joint genotyping (produces a final VCF). 
 
-You can now run the pipeline like so:
+You can now run each pipeline like so:
 
-`nextflow -c path_to_repo/nextflow.config run path_to_repo/gatk-alignment.nf --samples Samples.csv`
+`nextflow -c path_to_repo/nextflow.config run path_to_repo/gatk-alignment.nf --samples Samples.csv --assembly hg38`
 
-where `Samples.csv` contains information on the input data (see section "Sample sheet").
+where `Samples.csv` contains information on the input data (see section "Sample sheet") and assembly specifies the underlying genome resource to use (see below).
 
 ## Valid assemblies
 
