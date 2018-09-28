@@ -20,7 +20,7 @@ if (params.genomes.containsKey(params.assembly) == false) {
 REF = file(params.genomes[ params.assembly ].fasta)
 DBSNP = file(params.genomes[ params.assembly ].dbsnp )
 G1K = file(params.genomes[ params.assembly ].g1k )
-GOLD1 = file(params.genomes[ params.assembly ].gold )
+MILLS = file(params.genomes[ params.assembly ].mills )
 OMNI = file(params.genomes[ params.assembly ].omni )
 HAPMAP = file(params.genomes[ params.assembly ].hapmap )
 AXIOM = file(params.genomes[ params.assembly ].axiom )
@@ -239,7 +239,7 @@ process runRecalibrationModeIndel {
 		-an ${indel_recalbration_values.join(' -an ')} \
 		--trust-all-polymorphic \
        	        -mode INDEL \
-                --resource mills,known=false,training=true,truth=true,prior=15.0:$GOLD1 \
+                --resource mills,known=false,training=true,truth=true,prior=15.0:$MILLS \
 		--resource axiomPoly,known=false,training=true,truth=false,prior=10:$AXIOM \
                	--resource dbsnp,known=true,training=false,truth=false,prior=2.0:$DBSNP \
 		-tranche ${params.indel_recalibration_tranche_values.join(' -tranche ')} \
