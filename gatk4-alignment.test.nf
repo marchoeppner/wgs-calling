@@ -87,7 +87,7 @@ log.info "========================================="
 
 Channel.from(inputFile)
        .splitCsv(sep: ';', header: true)
-       .set {  inputSplitter }
+       .set {  inputFastp }
 
 process runTrimAndSplit {
 
@@ -101,8 +101,8 @@ process runTrimAndSplit {
   set indivID, sampleID, libraryID, file(json),file(html) into outputReportTrimming
 
   script:
-  left = fastqR1.getBaseName() + ".trimmed.fastq.gz"
-  right = fastqR2.getBaseName() + ".trimmed.fastq.gz"
+  left = file(fastqR1).getBaseName() + ".trimmed.fastq.gz"
+  right = file(fastqR2).getBaseName() + ".trimmed.fastq.gz"
   json = indivID + "_" + sampleID + "_" + libraryID + ".fastp.json"
   html = indivID + "_" + sampleID + "_" + libraryID + ".fastp.html"
 
