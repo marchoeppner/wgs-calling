@@ -97,7 +97,7 @@ process runTrimAndSplit {
   set indivID, sampleID, libraryID, rgID, platform_unit, platform, platform_model, center, run_date, fastqR1, fastqR2 from inputFastp
 
   output:
-  set indivID, sampleID, libraryID, rgID, platform_unit, platform, platform_model, center, run_date,file("*_R1.trimmed.fastq.gz"),file("*_R1.trimmed.fastq.gz") into outputTrimAndSplit
+  set indivID, sampleID, libraryID, rgID, platform_unit, platform, platform_model, center, run_date,file("*_R1*.trimmed.fastq.gz"),file("*_R2*.trimmed.fastq.gz") into outputTrimAndSplit
   set indivID, sampleID, libraryID, file(json),file(html) into outputReportTrimming
 
   script:
