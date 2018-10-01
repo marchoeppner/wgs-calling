@@ -78,7 +78,7 @@ process runHCSample {
   tag "${indivID}|${params.assembly}|batch: ${region_tag}"
   publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/HaplotypeCaller", mode: 'copy'
 
-  scratch use_scratch
+  // scratch use_scratch
 
   input:
   set indivID,sampleID,bam,bai from inputHCSample
@@ -97,6 +97,7 @@ process runHCSample {
 		-R $REF \
 		-I $bam \
 		--intervals $region \
+		-ip 500 \
 		-O $vcf \
 		-OVI true \
 		-ERC GVCF

@@ -97,7 +97,7 @@ process runTrimAndSplit {
   set indivID, sampleID, libraryID, rgID, platform_unit, platform, platform_model, center, run_date, fastqR1, fastqR2 from inputFastp
 
   output:
-  set indivID, sampleID, libraryID, rgID, platform_unit, platform, platform_model, center, run_date,file("*_R1*.trimmed.fastq.gz"),file("*_R2*.trimmed.fastq.gz") into outputTrimAndSplit
+  set val(indivID), val(sampleID), val(libraryID), val(rgID), val(platform_unit), val(platform), val(platform_model), val(center), val(run_date),file("*_R1*.trimmed.fastq.gz"),file("*_R2*.trimmed.fastq.gz") into outputTrimAndSplit
   set indivID, sampleID, libraryID, file(json),file(html) into outputReportTrimming
 
   script:
@@ -112,28 +112,30 @@ process runTrimAndSplit {
 
 }
 
-inputBwa = outputTrimAndSplit.transpose( by: [0,1,2,3,4,5,6,7,8] )
+inputBwa = outputTrimAndSplit.transpose( by: [9,10] )
 
 // Run BWA on each trimmed chunk
 process runBwa {
 
-    tag "${indivID}|${sampleID}|${libraryID}|${rgID}|batch: ${chunk}|${params.assembly}"
+    tag "${indivID}|${sampleID}|${libraryID}|${rgID}|batch: ${this_chunk}|${params.assembly}"
     // publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/Processing/Libraries/${libraryID}/${rgID}/BWA/"
 
     //scratch use_scratch
 
     input:
-    set indivID, sampleID, libraryID, rgID, platform_unit, platform, platform_model, run_date, center,file(left),file(right) from inputBwa
+    set indivID, sampleID, libraryID, rgID, platform_unit, platform, platform_model, run_date, center,file(fastqR1),file(fastqR2) from inputBwa
 
     output:
 
     set indivID, sampleID, file(outfile) into runBWAOutput
 
     script:
-    outfile = sampleID + "_" + libraryID + "_" + rgID + "_" + chunk + ".aligned.cram"
+    this_chunk = fastqR1.getName().split("-")[0].substring(0,4)
+
+    outfile = sampleID + "_" + libraryID + "_" + rgID + "_" + this_chunk + ".aligned.cram"
 
     """
-	bwa mem -M -R "@RG\\tID:${rgID}\\tPL:ILLUMINA\\tPU:${platform_unit}\\tSM:${indivID}_${sampleID}\\tLB:${libraryID}\\tDS:${REF}\\tCN:${center}" -t ${task.cpus} ${REF} $left $right | samtools view -h -f 0x2 - | samtools sort -O cram -m 7G --reference $REF - > $outfile
+	bwa mem -M -R "@RG\\tID:${rgID}\\tPL:ILLUMINA\\tPU:${platform_unit}\\tSM:${indivID}_${sampleID}\\tLB:${libraryID}\\tDS:${REF}\\tCN:${center}" -t ${task.cpus} ${REF} $fastqR1 $fastqR2 | samtools view -h -f 0x2 - | samtools sort -O cram -m 7G --reference $REF - > $outfile
     """
 }
 
