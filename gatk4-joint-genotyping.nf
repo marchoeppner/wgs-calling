@@ -202,8 +202,9 @@ process runRecalibrationModeSNP {
                 --tranches-file $tranches \
 	        --rscript-file $rscript \
 		-an ${snp_recalibration_values.join(' -an ')} \
-		--sample-every-Nth-variant ${params.downsampleFactor} \
                 -mode SNP \
+		--trust-all-polymorphic \
+		-L $INTERVALS \
 		--resource hapmap,known=false,training=true,truth=true,prior=15.0:$HAPMAP \
 		--resource omni,known=false,training=true,truth=true,prior=12.0:$OMNI \
 		--resource 1000G,known=false,training=true,truth=false,prior=10.0:$G1K \
@@ -237,12 +238,14 @@ process runRecalibrationModeIndel {
        	        --tranches-file $tranches \
                 --rscript-file $rscript \
 		-an ${indel_recalbration_values.join(' -an ')} \
-		--trust-all-polymorphic \
        	        -mode INDEL \
+		-L $INTERVALS \
                 --resource mills,known=false,training=true,truth=true,prior=15.0:$MILLS \
 		--resource axiomPoly,known=false,training=true,truth=false,prior=10:$AXIOM \
                	--resource dbsnp,known=true,training=false,truth=false,prior=2.0:$DBSNP \
 		-tranche ${params.indel_recalibration_tranche_values.join(' -tranche ')} \
+		-max-gaussians 4 \
+		--trust-all-polymorphic
 	"""
 }
 
@@ -298,7 +301,6 @@ process runRecalSNPApply {
 			-V $vcf_indel \
 		        --recal-file $recal_file \
                 	--tranches-file $tranches \
-			--trust-all-polymorphic \
 			--sample-every-Nth-variant ${params.downsampleFactor} \
 			-mode SNP \
 			--ts-filter-level 99.0 \
