@@ -295,7 +295,7 @@ process runRecalSNPApply {
 		gatk IndexFeatureFile -F $recal_file
 	 	gatk --java-options "-Xmx${task.memory.toGiga()}G" ApplyVQSR \
 			-R $REF \
-			-V $gvcf \
+			-V $vcf_indel \
 		        --recal-file $recal_file \
                 	--tranches-file $tranches \
 			--trust-all-polymorphic \
