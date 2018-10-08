@@ -284,11 +284,12 @@ process runRecalSNPApply {
         set file(vcf_indel),file(vcf_indel_index) from VcfRecalSNPApply
 
 	output:
-	file(vcf_recalibrated) into inputFilterIndel
+	set file(vcf_recalibrated),file(vcf_recalibrated_index) into inputFilterIndel
 
 	script:
  
 	vcf_recalibrated = "genotypes.recal_Indel.recal_SNP.vcf.gz"
+	vcf_recalibrated_index = vcf_recalibrated + ".tbi"
 
 	"""
 		gatk IndexFeatureFile -F $recal_file
@@ -297,10 +298,10 @@ process runRecalSNPApply {
 			-V $vcf_indel \
 		        --recal-file $recal_file \
                 	--tranches-file $tranches \
-			--sample-every-Nth-variant ${params.downsampleFactor} \
 			-mode SNP \
 			--ts-filter-level 99.0 \
-			-O $vcf_recalibrated
+			-O $vcf_recalibrated \
+			-OVI true
   	"""
 }
 
@@ -340,15 +341,16 @@ process runCollectVariantCallingMetrics {
         set file(filtered_gvcf),file(filtered_gvcf_index) from inputCollectMetrics
 
 	output:
-	file(report) into outputCallingMetrics
+	set file(metrics_details),file(metrics_summary) into outputCallingMetrics
 
 	script:
-	metrics = "variant_call_metrics.txt"
+	metrics_details = "genotypes.variant_calling_detail_metrics"
+	metrics_summary = "genotypes.variant_calling_summary_metrics"
 
 	"""
 		gatk --java-options "-Xmx${task.memory.toGiga()}G" CollectVariantCallingMetrics \
-		-I ${filered_gvcf} \
-		-O $metrics \
+		-I ${filtered_gvcf} \
+		-O genotypes \
 		-TI $INTERVALS \
 		--DBSNP $DBSNP
 	"""
