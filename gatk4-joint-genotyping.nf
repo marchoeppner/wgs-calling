@@ -192,7 +192,6 @@ process runRecalibrationModeSNP {
 	script:
 	recal_file = "genotypes.recal_SNP.recal"
   	tranches = "genotypes.recal_SNP.tranches"
-  	rscript = "genotypes.recal_SNP.R"
 
   	"""
 	gatk --java-options "-Xmx${task.memory.toGiga()}G" VariantRecalibrator \
@@ -200,7 +199,6 @@ process runRecalibrationModeSNP {
 		-V $vcf \
                	-O $recal_file \
                 --tranches-file $tranches \
-	        --rscript-file $rscript \
 		-an ${snp_recalibration_values.join(' -an ')} \
                 -mode SNP \
 		--trust-all-polymorphic \
@@ -228,7 +226,6 @@ process runRecalibrationModeIndel {
 
 	recal_file = "genotypes.recal_Indel.recal"
 	tranches = "genotypes.recal_Indel.tranches"
-	rscript = "genotypes.recal_Indel.R"
 
 	"""
         gatk --java-options "-Xmx${task.memory.toGiga()}G" VariantRecalibrator \
@@ -236,7 +233,6 @@ process runRecalibrationModeIndel {
                 -V $vcf \
                	-O $recal_file \
        	        --tranches-file $tranches \
-                --rscript-file $rscript \
 		-an ${indel_recalbration_values.join(' -an ')} \
        	        -mode INDEL \
 		-L $INTERVALS \
@@ -244,7 +240,7 @@ process runRecalibrationModeIndel {
 		--resource axiomPoly,known=false,training=true,truth=false,prior=10:$AXIOM \
                	--resource dbsnp,known=true,training=false,truth=false,prior=2.0:$DBSNP \
 		-tranche ${params.indel_recalibration_tranche_values.join(' -tranche ')} \
-		-max-gaussians 4 \
+		-max-gaussians 3 \
 		--trust-all-polymorphic
 	"""
 }
