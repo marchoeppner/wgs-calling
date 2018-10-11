@@ -213,7 +213,7 @@ process runBaseRecalibrator {
 	    
     	input:
     	set indivID, sampleID, dedup_bam, dedup_bai from runMarkDuplicatesOutput
-	each region from  regions
+	each region from regions
     
     	output:
     	set indivID, sampleID, file(recal_table) into outputBaseRecalibrator
@@ -289,6 +289,7 @@ process runApplyBQSR {
           gatk --java-options "-Xmx${task.memory.toGiga()}G" ApplyBQSR \
              --reference ${REF} \
              --input ${realign_bam} \
+             --emit-original-quals true \
 	     -L $INTERVALS \
 	     -ip 500 \
              -bqsr ${recal_table} \
@@ -315,6 +316,28 @@ process runApplyBQSR {
 //
 // ------------------------------------------------------------------------------------------------------------
 
+process runWgsCoverage {
+
+	tag "${indivID}|${sampleID}|${params.assembly}"
+
+	input:
+	set val(indivID),val(sampleID),val(bam),val(bai) from BamForWGSStats
+
+	output:
+	file(wgs_stats) into CoverageStats
+
+	script:
+	wgs_stats = indivID + "_" + sampleID + "_wgs_coverage.txt"
+
+	"""
+		picard CollectAlignmentSummaryMetrics \
+		R=$REF \
+		I=$bam \
+		O=$wgs_stats
+	"""
+	
+}
+
 process runMultiQCLibrary {
 
     tag "Generating library level summary and QC plots"
@@ -323,6 +346,7 @@ process runMultiQCLibrary {
     input:
     file('*') from runMarkDuplicatesOutput_QC.flatten().toList()
     file('*') from outputReportTrimming.flatten().toList()
+    file('*') from CoverageStats.flatten().toList()
 
     output:
     file("library_multiqc*") into runMultiQCLibraryOutput

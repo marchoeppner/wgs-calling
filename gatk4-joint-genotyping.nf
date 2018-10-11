@@ -120,7 +120,7 @@ process runGenomicsDBImport  {
 process runGenotypeGVCFs {
   
 	tag "ALL|${params.assembly}|batch: ${region_tag}"
-	publishDir "${OUTDIR}/${params.assembly}/Variants/JoinedGenotypes/PerRegion"
+	publishDir "${OUTDIR}/${params.assembly}/Variants/JointGenotypes/PerRegion"
   
 	input:
 	set region,file(genodb) from inputJoinedGenotyping
@@ -308,7 +308,7 @@ process runRecalSNPApply {
 process runVariantFiltrationIndel {
 
 	tag "ALL"
-	publishDir "${OUTDIR}/${params.assembly}/Variants/Filtered"
+	publishDir "${OUTDIR}/${params.assembly}/Variants/Final"
 
   	input:
 	set file(gvcf),file(gvcf_index) from inputFilterIndel
