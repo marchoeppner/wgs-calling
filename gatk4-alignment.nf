@@ -1,4 +1,3 @@
-
 #!/usr/bin/env nextflow
 
 inputFile = file(params.samples)
@@ -25,12 +24,6 @@ G1K = file(params.genomes[ params.assembly ].g1k )
 MILLS = file(params.genomes[ params.assembly ].mills )
 INTERVALS = file(params.genomes[params.assembly ].intervals )
 INTERVAL_CHUNKS = file(params.genomes[params.assembly ].interval_chunks )
-
-// *******************
-// Tools
-// *******************
-
-splitter = "${baseDir}/bin/split_and_compress.sh"
 
 // ******************
 // Misc
@@ -94,94 +87,55 @@ log.info "========================================="
 
 Channel.from(inputFile)
        .splitCsv(sep: ';', header: true)
-       .set {  inputSplitter }
+       .set {  inputFastp }
 
-// Split PE Fastq files into chunks of x entries, processed R1 and R2 in parallel
-process SplitFile {
+process runTrimAndSplit {
 
    tag "${indivID}|${sampleID}|${libraryID}"
-   //publishDir "output/splits"
 
-   scratch use_scratch
+  input:
+  set indivID, sampleID, libraryID, rgID, platform_unit, platform, platform_model, center, run_date, fastqR1, fastqR2 from inputFastp
 
-   input:
-        set indivID, sampleID, libraryID, rgID, platform_unit, platform, platform_model, center, run_date, fastqR1, fastqR2 from inputSplitter
+  output:
+  set val(indivID), val(sampleID), val(libraryID), val(rgID), val(platform_unit), val(platform), val(platform_model), val(center), val(run_date),file("*_R1*.trimmed.fastq.gz"),file("*_R2*.trimmed.fastq.gz") into outputTrimAndSplit
+  set indivID, sampleID, libraryID, file(json),file(html) into outputReportTrimming
 
-   output:
-        file("*_chunk*.fastq.gz") into outputSplitter
-        set groupID,indivID, sampleID, libraryID, rgID, platform_unit, platform, platform_model, run_date, center into outputSplitterMetadata
+  script:
+  left = file(fastqR1).getBaseName() + ".trimmed.fastq.gz"
+  right = file(fastqR2).getBaseName() + ".trimmed.fastq.gz"
+  json = indivID + "_" + sampleID + "_" + libraryID + ".fastp.json"
+  html = indivID + "_" + sampleID + "_" + libraryID + ".fastp.html"
 
-   script:
-   groupID = fastqR1.split("/")[-1].split("_R")[0]
-
-   """
-      parallel $splitter ::: $fastqR1 $fastqR2
-   """
+  """
+	fastp --in1 $fastqR1 --in2 $fastqR2 --out1 $left --out2 $right -s ${task.cpus*3} -w ${task.cpus} -j $json -h $html
+  """
 
 }
 
-// AS-167616-LR-25610_R2_chunk01.fastq.gz
-// Group the Chunks by library ID, chunk and PE set and add back in the Metadata
-outputSplitter
-	.flatten()
-        .map { file -> tuple( file.name.split('_R')[0], file.toString().find(~/chunk\d+/), file )}
-        .groupTuple(by: [0,1])
-	.set {chunksMap }
-
-chunksMap
-        .combine(outputSplitterMetadata, by: 0)
-	.set {chunkGroups}
-
-process runTrimgalore {
-
-        tag "${indivID}|${sampleID}|batch: ${chunk}"
-        publishDir "${OUTDIR}/trimgalore", mode: 'copy',
-                saveAs: {filename ->
-                if (filename.indexOf("_fastqc") > 0) "FastQC/$filename"
-                else if (filename.indexOf("trimming_report.txt") > 0) "logs/$filename"
-                else params.saveTrimmed ? filename : null
-                }
-
-        input:
-	set groupID,chunk,file(reads),indivID, sampleID, libraryID, rgID, platform_unit, platform, platform_model, run_date, center from chunkGroups
-
-        output:
-        set chunk,indivID, sampleID, libraryID, rgID, platform_unit, platform, platform_model, run_date, center, file("*val_1*fq.gz"),file("*val_2*fq.gz"),val(groupID) into inputBwa
-        file "*trimming_report.txt" into trimgalore_results, trimgalore_logs
-        file "*_fastqc.{zip,html}" into FastQCOutput
-
-        script:
-
-        c_r1 = clip_r1 > 0 ? "--clip_r1 ${clip_r1}" : ''
-        c_r2 = clip_r2 > 0 ? "--clip_r2 ${clip_r2}" : ''
-        tpc_r1 = three_prime_clip_r1 > 0 ? "--three_prime_clip_r1 ${three_prime_clip_r1}" : ''
-        tpc_r2 = three_prime_clip_r2 > 0 ? "--three_prime_clip_r2 ${three_prime_clip_r2}" : ''
-
-        """
-        trim_galore --paired --fastqc --length 35 --gzip $c_r1 $c_r2 $tpc_r1 $tpc_r2 $reads
-        """
-}
+inputBwa = outputTrimAndSplit.transpose( by: [9,10] )
 
 // Run BWA on each trimmed chunk
 process runBwa {
 
-    tag "${indivID}|${sampleID}|${libraryID}|${rgID}|batch: ${chunk}|${params.assembly}"
+    tag "${indivID}|${sampleID}|${libraryID}|${rgID}|batch: ${this_chunk}|${params.assembly}"
     // publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/Processing/Libraries/${libraryID}/${rgID}/BWA/"
 
     //scratch use_scratch
 
     input:
-    set chunk,indivID, sampleID, libraryID, rgID, platform_unit, platform, platform_model, run_date, center,file(left),file(right),groupID from inputBwa
+    set indivID, sampleID, libraryID, rgID, platform_unit, platform, platform_model, run_date, center,file(fastqR1),file(fastqR2) from inputBwa
 
     output:
 
     set indivID, sampleID, file(outfile) into runBWAOutput
 
     script:
-    outfile = sampleID + "_" + libraryID + "_" + rgID + "_" + chunk + ".aligned.cram"
+    this_chunk = fastqR1.getName().split("-")[0].substring(0,4)
+
+    outfile = sampleID + "_" + libraryID + "_" + rgID + "_" + this_chunk + ".aligned.cram"
 
     """
-	bwa mem -M -R "@RG\\tID:${rgID}\\tPL:ILLUMINA\\tPU:${platform_unit}\\tSM:${indivID}_${sampleID}\\tLB:${libraryID}\\tDS:${REF}\\tCN:${center}" -t ${task.cpus} ${REF} $left $right | samtools view -h -f 0x2 - | samtools sort -O cram -m 7G --reference $REF - > $outfile
+	bwa mem -M -R "@RG\\tID:${rgID}\\tPL:ILLUMINA\\tPU:${platform_unit}\\tSM:${indivID}_${sampleID}\\tLB:${libraryID}\\tDS:${REF}\\tCN:${center}" -t ${task.cpus} ${REF} $fastqR1 $fastqR2 | samtools view -h -f 0x2 - | samtools sort -O cram -m 7G --reference $REF - > $outfile
     """
 }
 
@@ -259,7 +213,7 @@ process runBaseRecalibrator {
 	    
     	input:
     	set indivID, sampleID, dedup_bam, dedup_bai from runMarkDuplicatesOutput
-	each region from  regions
+	each region from regions
     
     	output:
     	set indivID, sampleID, file(recal_table) into outputBaseRecalibrator
@@ -316,7 +270,7 @@ inputForApplyBQSR = MergedReport.join(BamForBQSR, by: [0,1])
 process runApplyBQSR {
 
 	tag "${indivID}|${sampleID}|${params.assembly}"
-	publishDir "${OUTDIR}/${params.assembly}/CRAM_FINAL", mode: 'copy'
+	publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/", mode: 'copy'
 
 	scratch use_scratch
 	    
@@ -335,6 +289,7 @@ process runApplyBQSR {
           gatk --java-options "-Xmx${task.memory.toGiga()}G" ApplyBQSR \
              --reference ${REF} \
              --input ${realign_bam} \
+             --emit-original-quals true \
 	     -L $INTERVALS \
 	     -ip 500 \
              -bqsr ${recal_table} \
@@ -361,6 +316,28 @@ process runApplyBQSR {
 //
 // ------------------------------------------------------------------------------------------------------------
 
+process runWgsCoverage {
+
+	tag "${indivID}|${sampleID}|${params.assembly}"
+
+	input:
+	set val(indivID),val(sampleID),val(bam),val(bai) from BamForWGSStats
+
+	output:
+	file(wgs_stats) into CoverageStats
+
+	script:
+	wgs_stats = indivID + "_" + sampleID + "_wgs_coverage.txt"
+
+	"""
+		picard CollectAlignmentSummaryMetrics \
+		R=$REF \
+		I=$bam \
+		O=$wgs_stats
+	"""
+	
+}
+
 process runMultiQCLibrary {
 
     tag "Generating library level summary and QC plots"
@@ -368,13 +345,12 @@ process runMultiQCLibrary {
 	    
     input:
     file('*') from runMarkDuplicatesOutput_QC.flatten().toList()
+    file('*') from outputReportTrimming.flatten().toList()
+    file('*') from CoverageStats.flatten().toList()
 
     output:
     file("library_multiqc*") into runMultiQCLibraryOutput
 
-    when:
-	params.report == true
-    	
     script:
 
     """
