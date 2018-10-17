@@ -89,15 +89,15 @@ Channel.from(inputFile)
        .splitCsv(sep: ';', header: true)
        .set {  inputFastp }
 
-process runTrimAndSplit {
+process runFastp {
 
-   tag "${indivID}|${sampleID}|${libraryID}"
+  tag "${indivID}|${sampleID}|${libraryID}"
 
   input:
   set indivID, sampleID, libraryID, rgID, platform_unit, platform, platform_model, center, run_date, fastqR1, fastqR2 from inputFastp
 
   output:
-  set val(indivID), val(sampleID), val(libraryID), val(rgID), val(platform_unit), val(platform), val(platform_model), val(center), val(run_date),file("*_R1*.trimmed.fastq.gz"),file("*_R2*.trimmed.fastq.gz") into outputTrimAndSplit
+  set val(indivID), val(sampleID), val(libraryID), val(rgID), val(platform_unit), val(platform), val(platform_model), val(center), val(run_date),file("*_R1*.trimmed.fastq.gz"),file("*_R2*.trimmed.fastq.gz") into inputBwa
   set indivID, sampleID, libraryID, file(json),file(html) into outputReportTrimming
 
   script:
@@ -107,17 +107,15 @@ process runTrimAndSplit {
   html = indivID + "_" + sampleID + "_" + libraryID + ".fastp.html"
 
   """
-	fastp --in1 $fastqR1 --in2 $fastqR2 --out1 $left --out2 $right -s ${task.cpus*3} -w ${task.cpus} -j $json -h $html
+	fastp --in1 $fastqR1 --in2 $fastqR2 --out1 $left --out2 $right -w ${task.cpus} -j $json -h $html
   """
 
 }
 
-inputBwa = outputTrimAndSplit.transpose( by: [9,10] )
-
 // Run BWA on each trimmed chunk
 process runBwa {
 
-    tag "${indivID}|${sampleID}|${libraryID}|${rgID}|batch: ${this_chunk}|${params.assembly}"
+    tag "${indivID}|${sampleID}|${libraryID}|${rgID}|${params.assembly}"
     // publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/Processing/Libraries/${libraryID}/${rgID}/BWA/"
 
     //scratch use_scratch
@@ -127,42 +125,16 @@ process runBwa {
 
     output:
 
-    set indivID, sampleID, file(outfile) into runBWAOutput
+    set indivID, sampleID, file(outfile),file(outfile_index) into inputMarkDuplicates
 
     script:
-    this_chunk = fastqR1.getName().split("-")[0].substring(0,4)
-
-    outfile = sampleID + "_" + libraryID + "_" + rgID + "_" + this_chunk + ".aligned.cram"
+    outfile = sampleID + "_" + libraryID + "_" + rgID + ".aligned.bam"
+    outfile_index = outfile + ".bai"
 
     """
-	bwa mem -M -R "@RG\\tID:${rgID}\\tPL:ILLUMINA\\tPU:${platform_unit}\\tSM:${indivID}_${sampleID}\\tLB:${libraryID}\\tDS:${REF}\\tCN:${center}" -t ${task.cpus} ${REF} $fastqR1 $fastqR2 | samtools view -h -f 0x2 - | samtools sort -O cram -m 7G --reference $REF - > $outfile
+	bwa mem -M -R "@RG\\tID:${rgID}\\tPL:ILLUMINA\\tPU:${platform_unit}\\tSM:${indivID}_${sampleID}\\tLB:${libraryID}\\tDS:${REF}\\tCN:${center}" -t ${task.cpus} ${REF} $fastqR1 $fastqR2 | samtools sort -m 4G -@ 4 --reference $REF - > $outfile
+	samtools index $outfile
     """
-}
-
-runBWAOutput_grouped_by_sample = runBWAOutput.groupTuple(by: [0,1])
-
-// Merge chunked alignments into single file per sample/individual
-process runMergeCram {
-    tag "${indivID}|${sampleID}|${params.assembly}"
-    publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/Processing/MergeAlignments"
-
-   //scratch use_scratch
-
-   input:
-   set indivID, sampleID, aligned_bam_list from runBWAOutput_grouped_by_sample
-
-   output: 
-   set indivID, sampleID, file(outfile_bam),file(outfile_bai) into inputMarkDuplicates 
-   
-   script:
-   outfile_bam = sampleID + ".merged.cram"
-   outfile_bai = sampleID + ".merged.cram.crai"
-
-   """
-	samtools merge -p -c -@ ${task.cpus} $outfile_bam ${aligned_bam_list.join(' ') }
-	samtools index $outfile_bam
-   """
-   
 }
 
 // Mark duplicate reads. This uses a discontinuted implementation of MD to fully leverage CRAM format
@@ -183,21 +155,21 @@ process runMarkDuplicates {
     file(outfile_md5) into MarkDuplicatesMD5
     
     script:
-    outfile_bam = sampleID + ".dedup.cram"
-    outfile_bai = sampleID + ".dedup.cram.bai"
-    outfile_md5 = sampleID + ".dedup.cram.md5"
+    outfile_bam = sampleID + ".dedup.bam"
+    outfile_bai = sampleID + ".dedup.bam.bai"
+    outfile_md5 = sampleID + ".dedup.bam.md5"
 
     outfile_metrics = sampleID + "_duplicate_metrics.txt"	
 
     """
-        gatk --java-options "-Xms32G -Xmx72G" MarkDuplicatesGATK \
+        gatk --java-options "-Xms 4G -Xmx${task.memory.toGiga()}G" MarkDuplicates \
                 -I ${bam} \
                 -O ${outfile_bam} \
                 -R ${REF} \
                 -M ${outfile_metrics} \
                 --CREATE_INDEX true \
                 --TMP_DIR \$TMPDIR \
-                --MAX_RECORDS_IN_RAM 1000000 \
+                --MAX_RECORDS_IN_RAM 100000 \
                 --ASSUME_SORTED true \
                 --CREATE_MD5_FILE true
         """
@@ -229,9 +201,8 @@ process runBaseRecalibrator {
 		--input ${dedup_bam} \
 		--known-sites ${MILLS} \
 		--known-sites ${DBSNP} \
-                --known-sites ${G1K} \
+		--use-original-qualities \
 		-L $region \
-		-ip 500 \
 		--output ${recal_table}
 	"""
 }
@@ -288,10 +259,10 @@ process runApplyBQSR {
     	"""
           gatk --java-options "-Xmx${task.memory.toGiga()}G" ApplyBQSR \
              --reference ${REF} \
+             --static-quantized-quals 10 --static-quantized-quals 20 --static-quantized-quals 30 \
+             --use-original-qualities \
              --input ${realign_bam} \
-             --emit-original-quals true \
 	     -L $INTERVALS \
-	     -ip 500 \
              -bqsr ${recal_table} \
              --output ${outfile_bam} \
              -OBM true \

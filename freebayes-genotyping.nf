@@ -1,8 +1,9 @@
 #!/usr/bin/env nextflow
 
-inputFile = file(params.samples)
+FOLDER = file(params.samples)
 
-params.outdir = "gvcf"
+FORMATTER = "ruby $baseDir/bin/format_intervals.rb"
+params.outdir = "output"
 
 OUTDIR = file(params.outdir)
 
@@ -59,84 +60,46 @@ VERSION = "0.1"
 // Header log info
 log.info "========================================="
 log.info "GATK Best Practice for Genome-Seq calling v${VERSION}"
-log.info "Section:             		HaplotypeCaller"
+log.info "Section:             		Freebayes"
 log.info "Nextflow Version:		$workflow.nextflow.version"
 log.info "Assembly version:		${params.assembly}"
 log.info "Command Line:			$workflow.commandLine"
 log.info "========================================="
 
-Channel.from(inputFile)
-       .splitCsv(sep: ';', header: true)
-       .set {  inputHCSample }
+Channel.fromPath(FOLDER)
+       .set {  inputFreebayes }
 
 // ------------------------------------------------------------------------------------------------------------
 // Haplotype Caller for raw genomic variants
 // ------------------------------------------------------------------------------------------------------------
 
-process runHCSample {
-
-  tag "${indivID}|${params.assembly}|batch: ${region_tag}"
-  publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/HaplotypeCaller", mode: 'copy'
+process runFreebayes {
+  tag "ALL|batch: ${region_tag}"
+  publishDir "${OUTDIR}/Freebayes/byRegion", mode: 'copy'
 
   // scratch use_scratch
 
   input:
-  set indivID,sampleID,bam,bai from inputHCSample
+  file(samples) from inputFreebayes
   each region from regions
 
   output:
-  set indivID,sampleID,file(vcf),file(vcf_index) into inputCombineVariants
+  file(vcf) into outputFreebayes
 
   script:
   region_tag = region.getName().split("-")[0]
-  vcf = indivID + "_" + sampleID + "." + region_tag + ".raw_variants.g.vcf.gz"
+  vcf = region_tag + ".raw_variants.vcf.gz"
   vcf_index = vcf + ".tbi"
 
   """ 
-	gatk --java-options "-Xms16G -Xmx${task.memory.toGiga()}G" HaplotypeCaller \
-		-R $REF \
-		-I $bam \
-		--intervals $region \
-		-O $vcf \
-		-OVI true \
-		-ERC GVCF
-  """  
+	freebayes-parallel <( $FORMATTER  $region ) ${task.cpus} \
+	-f $REF \
+	--genotype-qualities \
+	-L $samples > $vcf
 
+  """
 }
 
-VariantsPerSample = inputCombineVariants.groupTuple(by: [0,1])
-
-process combineVariants {
-	tag "${indivID}|${params.assembly}"
-	publishDir "${OUTDIR}/${params.assembly}/HC", mode: 'copy'
-
-	input:
-	set indivID,sampleID,file(vcf_files),file(indices) from VariantsPerSample
-
-	output:
-	set file(gvcf),file(gvcf_index) into outputCombineVariants
-
-	script:
-	gvcf = indivID + "_" + sampleID + ".g.vcf.gz"
-	gvcf_index = gvcf + ".tbi"
-
-	// The interval files are numbered based on their correct genomic order. We can use this
-	// to sort the partial gvcfs into the correct order for merging
-        def sorted_vcf = [ ]
-	regions.each { region -> 
-		region_tag = region.getName().split("-")[0]
-		this_vcf = indivID + "_" + sampleID + "." + region_tag + ".raw_variants.g.vcf.gz"
-		sorted_vcf << vcf_files.find { it =~ this_vcf }
-	}
-
-	"""
-		gatk GatherVcfsCloud \
-			-I ${sorted_vcf.join(" -I ")} \
-			--output $gvcf \
-
-		gatk IndexFeatureFile -F $gvcf
-	"""
-}
 workflow.onComplete {
   log.info "========================================="
   log.info "Duration:		$workflow.duration"

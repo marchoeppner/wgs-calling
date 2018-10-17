@@ -109,7 +109,6 @@ process runGenomicsDBImport  {
 		--variant ${vcf_list.join(" --variant ")} \
 		--reference $REF \
 		-L $region \
-		-ip 500 \
 		--genomicsdb-workspace-path $genodb
 	"""
 
@@ -203,10 +202,10 @@ process runRecalibrationModeSNP {
                 -mode SNP \
 		--trust-all-polymorphic \
 		-L $INTERVALS \
-		--resource hapmap,known=false,training=true,truth=true,prior=15.0:$HAPMAP \
-		--resource omni,known=false,training=true,truth=true,prior=12.0:$OMNI \
-		--resource 1000G,known=false,training=true,truth=false,prior=10.0:$G1K \
-		--resource dbsnp,known=true,training=false,truth=false,prior=2.0:$DBSNP \
+		--resource hapmap,known=false,training=true,truth=true,prior=15:$HAPMAP \
+		--resource omni,known=false,training=true,truth=true,prior=12:$OMNI \
+		--resource 1000G,known=false,training=true,truth=false,prior=10:$G1K \
+		--resource dbsnp,known=true,training=false,truth=false,prior=7:$DBSNP \
                 -tranche ${params.snp_recalibration_tranche_values.join(' -tranche ')} \
   	"""
 }
@@ -236,9 +235,9 @@ process runRecalibrationModeIndel {
 		-an ${indel_recalbration_values.join(' -an ')} \
        	        -mode INDEL \
 		-L $INTERVALS \
-                --resource mills,known=false,training=true,truth=true,prior=15.0:$MILLS \
+                --resource mills,known=false,training=true,truth=true,prior=12.0:$MILLS \
 		--resource axiomPoly,known=false,training=true,truth=false,prior=10:$AXIOM \
-               	--resource dbsnp,known=true,training=false,truth=false,prior=2.0:$DBSNP \
+               	--resource dbsnp,known=true,training=false,truth=false,prior=2:$DBSNP \
 		-tranche ${params.indel_recalibration_tranche_values.join(' -tranche ')} \
 		-max-gaussians 3 \
 		--trust-all-polymorphic
@@ -268,7 +267,7 @@ process runRecalIndelApply {
                         --recal-file $recal_file \
                         --tranches-file $tranches \
                         -mode INDEL \
-                        --ts-filter-level 99.0 \
+                        --ts-filter-level ${params.indel_filter_level} \
                         -O $vcf_indel \
                         -OVI true
           """
@@ -299,7 +298,7 @@ process runRecalSNPApply {
 		        --recal-file $recal_file \
                 	--tranches-file $tranches \
 			-mode SNP \
-			--ts-filter-level 99.0 \
+			--ts-filter-level ${params.snp_filter_level} \
 			-O $vcf_recalibrated \
 			-OVI true
   	"""
