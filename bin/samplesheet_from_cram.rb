@@ -1,14 +1,22 @@
-directory = ARGV.shift.to_s
-files = Dir[directory + "/*.cram"]
+this_dir = Dir.pwd
 
-puts "IndividualID;sampleID;Cram;Crai"
+root_directory = ARGV.shift
 
-files.each do |file|
-	path = File.realpath(file)
+folders = Dir["#{root_directory}/Indi*"]
 
-	individual = path.split("/")[-3]
-	sample = path.split("/")[-2]
+puts "Individual;Sample;Cram;Bai"
 
-	puts "#{individual};#{sample};#{path};#{path}.bai"	
+folders.each do |folder|
 
+	sample_folders = Dir[folder + "/Sample*"]
+
+	sample_folders.each do |sample_folder|
+
+		cram_file = Dir[sample_folder + "/*.cram"].shift
+
+		individual = folder.split("/")[-1]
+		sample = sample_folder.split("/")[-1]
+
+		puts "#{individual};#{sample};#{this_dir}/#{cram_file};#{this_dir}/#{cram_file}.bai"
+	end
 end

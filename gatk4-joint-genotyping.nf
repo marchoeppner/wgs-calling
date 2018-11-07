@@ -27,6 +27,10 @@ AXIOM = file(params.genomes[ params.assembly ].axiom )
 INTERVALS = file(params.genomes[params.assembly ].intervals )
 INTERVAL_CHUNKS = file(params.genomes[params.assembly ].interval_chunks )
 
+// Rules for hard filtering
+SNP_RULES = params.snp_filter_rules
+INDEL_RULES = params.indel_filter_rules
+
 // Annotations to use for variant recalibration
 snp_recalibration_values = params.snp_recalibration_values 
 indel_recalbration_values = params.indel_recalbration_values
@@ -89,7 +93,7 @@ process runGenomicsDBImport  {
 	tag "ALL|${params.assembly}|batch: ${region_tag}"
         publishDir "${OUTDIR}/${params.assembly}/Variants/GenomicsDB"
 	
-	//scratch use_scratch 
+	scratch use_scratch 
 
 	input:
 	file(vcf_list) from GVCF.collect()
@@ -109,7 +113,7 @@ process runGenomicsDBImport  {
 		--variant ${vcf_list.join(" --variant ")} \
 		--reference $REF \
 		-L $region \
-		--genomicsdb-workspace-path $genodb
+		--genomicsdb-workspace-path $genodb \
 	"""
 
 }
@@ -149,13 +153,13 @@ process runGenotypeGVCFs {
 
 process combineVariantsFromGenotyping {
 	tag "ALL"
-	publishDir "${OUTDIR}/${params.assembly}/Variants/JoinedGenotypes", mode: 'copy'
+	publishDir "${OUTDIR}/${params.assembly}/Variants/JointGenotypes", mode: 'copy'
 
 	input:
 	file(vcf_files) from inputCombineVariantsFromGenotyping.collect()
 
 	output:
-	set file(gvcf),file(gvcf_index) into (inputRecalSNP , inputRecalIndel )
+	set file(gvcf),file(gvcf_index) into (inputRecalSNP , inputRecalIndel, inputHardFilterSnp, inputHardFilterIndel )
 
 	script:
 	gvcf = "genotypes.merged.vcf.gz"
@@ -175,6 +179,116 @@ process combineVariantsFromGenotyping {
 
 		gatk IndexFeatureFile -F $gvcf
 	"""
+}
+
+process runHardFilterSNP {
+
+	tag "ALL"
+	publishDir "${OUTDIR}/${params.assembly}/Variants/HardFilter", mode: 'copy'
+
+	input:
+	set file(vcf),file(index) from inputHardFilterSnp
+	
+	output:
+	set file(vcf_filtered),file(vcf_filtered_index) into outputHardFilterSnp
+
+	script:
+	vcf_filtered = "genotypes.hard_filter.snp.vcf.gz"
+	vcf_filtered_index = vcf_filtered + ".tbi"
+
+	"""
+		gatk SelectVariants \
+                        --select-type SNP \
+                        -V $vcf \
+                        -O snps.vcf.gz \
+                        -OVI
+
+		 gatk VariantFiltration \
+                      -R $REF \
+                      -V snps.vcf.gz \
+                      -O $vcf_filtered \
+                      --filter-expression "${SNP_RULES}" \
+                      --filter-name "hard_snp_filter" \
+                      -OVI true
+	"""
+	
+}
+
+process runHardFilterIndel {
+
+	tag "ALL"
+        publishDir "${OUTDIR}/${params.assembly}/Variants/HardFilter", mode: 'copy'
+
+        input:
+        set file(vcf),file(index) from inputHardFilterIndel
+
+        output:
+        set file(vcf_filtered),file(vcf_filtered_index) into outputHardFilterIndel
+
+        script:
+        vcf_filtered = "genotypes.hard_filter.indel.vcf.gz"
+        vcf_filtered_index = vcf_filtered + ".tbi"
+
+        """
+		gatk SelectVariants \
+			--select-type INDEL \
+			-V $vcf \
+			-O indels.vcf.gz \
+			-OVI 
+
+                gatk VariantFiltration \
+                      -R $REF \
+                      -V indels.vcf.gz \
+                      -O $vcf_filtered \
+                      --filter-expression "${INDEL_RULES}" \
+                      --filter-name "hard_indel_filter" \
+                       -OVI true
+        """
+
+}
+
+process runMergeHardFilterVcf {
+
+ 	tag "ALL"
+        publishDir "${OUTDIR}/${params.assembly}/Variants/HardFilter", mode: 'copy'
+
+        input:
+        set file(indels),file(indels_index) from outputHardFilterIndel
+	set file(snps),file(snps_index) from outputHardFilterSnp
+
+
+        output:
+        set file(vcf_merged),file(vcf_merged_index) into outputHardFilter
+
+	script:
+	vcf_merged = "genotypes.hard_filter.merged.vcf.gz"
+	vcf_merged_index = vcf_merged + ".tbi"
+
+
+	"""
+		gatk --java-options "-Xmx${task.memory.toGiga()}G"  MergeVcfs \
+		-I $indels \
+		-I $snps \
+		-O $vcf_merged
+	"""
+
+}
+
+process runSplitVcfHardFilter {
+
+	tag "ALL"
+	publishDir "${OUTDIR}/${params.assembly}/Variants/HardFilter/BySample", mode: 'copy'
+
+	input:
+	set file(vcf),file(index) from outputHardFilter
+
+	output:
+	file("*.vcf.gz") into outputSplitVcfHardFilter
+
+	"""
+		for sample in `bcftools query -l $vcf`; do gatk SelectVariants -sn $sample -V $vcf -O $sample'.vcf.gz' --remove-unused-alternates --exclude-non-variants -OVI -R $REF ; done;
+	"""
+
 }
 
 process runRecalibrationModeSNP {
@@ -276,7 +390,7 @@ process runRecalIndelApply {
 process runRecalSNPApply {
 
 	tag "ALL"
-	publishDir "${OUTDIR}/${params.assembly}/Variants/Filtered"
+	publishDir "${OUTDIR}/${params.assembly}/Variants/VSQR/Filtered", mode: 'copy'
 
 	input:
 	set file(recal_file),file(tranches) from inputRecalSNPApply
@@ -307,7 +421,7 @@ process runRecalSNPApply {
 process runVariantFiltrationIndel {
 
 	tag "ALL"
-	publishDir "${OUTDIR}/${params.assembly}/Variants/Final"
+	publishDir "${OUTDIR}/${params.assembly}/Variants/VSQR/Final", mode: 'copy'
 
   	input:
 	set file(gvcf),file(gvcf_index) from inputFilterIndel

@@ -75,7 +75,7 @@ Channel.from(inputFile)
 
 process runHCSample {
 
-  tag "${indivID}|${params.assembly}|batch: ${region_tag}"
+  tag "${indivID}|${sampleID}|${params.assembly}|batch: ${region_tag}"
   publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/HaplotypeCaller", mode: 'copy'
 
   // scratch use_scratch

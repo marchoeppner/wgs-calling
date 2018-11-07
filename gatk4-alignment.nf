@@ -97,7 +97,7 @@ process runFastp {
   set indivID, sampleID, libraryID, rgID, platform_unit, platform, platform_model, center, run_date, fastqR1, fastqR2 from inputFastp
 
   output:
-  set val(indivID), val(sampleID), val(libraryID), val(rgID), val(platform_unit), val(platform), val(platform_model), val(center), val(run_date),file("*_R1*.trimmed.fastq.gz"),file("*_R2*.trimmed.fastq.gz") into inputBwa
+  set val(indivID), val(sampleID), val(libraryID), val(rgID), val(platform_unit), val(platform), val(platform_model), val(center), val(run_date),file("*_R1*.trimmed.fastq.gz"),file("*_R2*.trimmed.fastq.gz") into outputTrimAndSplit
   set indivID, sampleID, libraryID, file(json),file(html) into outputReportTrimming
 
   script:
@@ -107,15 +107,17 @@ process runFastp {
   html = indivID + "_" + sampleID + "_" + libraryID + ".fastp.html"
 
   """
-	fastp --in1 $fastqR1 --in2 $fastqR2 --out1 $left --out2 $right -w ${task.cpus} -j $json -h $html
+	fastp --in1 $fastqR1 --in2 $fastqR2 --out1 $left --out2 $right -w ${task.cpus} -s ${task.cpus*3} -j $json -h $html
   """
 
 }
 
+inputBwa = outputTrimAndSplit.transpose( by: [9,10] )
+
 // Run BWA on each trimmed chunk
 process runBwa {
 
-    tag "${indivID}|${sampleID}|${libraryID}|${rgID}|${params.assembly}"
+    tag "${indivID}|${sampleID}|${libraryID}|${rgID}|${this_chunk}|${params.assembly}"
     // publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/Processing/Libraries/${libraryID}/${rgID}/BWA/"
 
     //scratch use_scratch
@@ -125,16 +127,50 @@ process runBwa {
 
     output:
 
-    set indivID, sampleID, file(outfile),file(outfile_index) into inputMarkDuplicates
+    set indivID, sampleID, file(outfile) into runBWAOutput
 
     script:
-    outfile = sampleID + "_" + libraryID + "_" + rgID + ".aligned.bam"
+    this_chunk = fastqR1.getName().split("-")[0].substring(0,4)
+    outfile = sampleID + "_" + libraryID + "_" + rgID + "_" + this_chunk + ".aligned.bam"
     outfile_index = outfile + ".bai"
 
     """
-	bwa mem -M -R "@RG\\tID:${rgID}\\tPL:ILLUMINA\\tPU:${platform_unit}\\tSM:${indivID}_${sampleID}\\tLB:${libraryID}\\tDS:${REF}\\tCN:${center}" -t ${task.cpus} ${REF} $fastqR1 $fastqR2 | samtools sort -m 4G -@ 4 --reference $REF - > $outfile
+	bwa mem -M -R "@RG\\tID:${rgID}\\tPL:ILLUMINA\\tPU:${platform_unit}\\tSM:${indivID}_${sampleID}\\tLB:${libraryID}\\tDS:${REF}\\tCN:${center}" -t ${task.cpus} ${REF} $fastqR1 $fastqR2 | samtools sort -m 4G -@ 4 -o $outfile - 
 	samtools index $outfile
     """
+}
+
+inputFixTags = runBWAOutput.groupTuple(by: [0,1])
+
+process runFixTags {
+
+	tag "${indivID}|${sampleID}|${params.assembly}"
+	
+	input:
+    	set indivID, sampleID, file(aligned_bam_list) from inputFixTags
+
+	output:
+	set indivID,sampleID,file(bam_fixed),file(bam_fixed_bai) into inputMarkDuplicates
+
+	script:
+	bam_fixed = indivID + "_" + sampleID + ".fixed_tags.bam"
+	bam_fixed_bai = bam_fixed + ".bai"
+
+	"""
+		gatk MergeSamFiles \
+                    -I ${aligned_bam_list.join(' -I ')} \
+                    -O merged.bam \
+		    --USE_THREADING true \
+                    --SORT_ORDER coordinate
+
+		gatk SetNmMdAndUqTags \
+		-I merged.bam \
+		-O $bam_fixed \
+		-R $REF \
+		--IS_BISULFITE_SEQUENCE false
+
+		samtools index $bam_fixed
+	"""
 }
 
 // Mark duplicate reads. This uses a discontinuted implementation of MD to fully leverage CRAM format
@@ -156,21 +192,21 @@ process runMarkDuplicates {
     
     script:
     outfile_bam = sampleID + ".dedup.bam"
-    outfile_bai = sampleID + ".dedup.bam.bai"
+    outfile_bai = sampleID + ".dedup.bai"
     outfile_md5 = sampleID + ".dedup.bam.md5"
 
     outfile_metrics = sampleID + "_duplicate_metrics.txt"	
 
     """
-        gatk --java-options "-Xms 4G -Xmx${task.memory.toGiga()}G" MarkDuplicates \
+        gatk --java-options "-Xms4G -Xmx${task.memory.toGiga()-3}G" MarkDuplicates \
                 -I ${bam} \
                 -O ${outfile_bam} \
                 -R ${REF} \
                 -M ${outfile_metrics} \
                 --CREATE_INDEX true \
                 --TMP_DIR \$TMPDIR \
-                --MAX_RECORDS_IN_RAM 100000 \
-                --ASSUME_SORTED true \
+                --MAX_RECORDS_IN_RAM 50000 \
+		--ASSUME_SORT_ORDER coordinate \
                 --CREATE_MD5_FILE true
         """
 }
@@ -203,6 +239,7 @@ process runBaseRecalibrator {
 		--known-sites ${DBSNP} \
 		--use-original-qualities \
 		-L $region \
+		-ip 150 \
 		--output ${recal_table}
 	"""
 }
