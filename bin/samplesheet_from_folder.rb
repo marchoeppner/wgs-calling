@@ -57,7 +57,7 @@ groups.each do |group, files|
 
         left,right = files.sort.collect{|f| File.absolute_path(f)}
 
-        library = group.split("_")[0]
+        library = group.split("_L00")[0]
         sample = group.split("-")[0]
 
         e = `zcat #{left} | head -n1 `

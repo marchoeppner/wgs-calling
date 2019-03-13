@@ -93,6 +93,8 @@ process runFastp {
 
   tag "${indivID}|${sampleID}|${libraryID}"
 
+  scratch true
+
   input:
   set indivID, sampleID, libraryID, rgID, platform_unit, platform, platform_model, center, run_date, fastqR1, fastqR2 from inputFastp
 
@@ -120,7 +122,7 @@ process runBwa {
     tag "${indivID}|${sampleID}|${libraryID}|${rgID}|${this_chunk}|${params.assembly}"
     // publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/Processing/Libraries/${libraryID}/${rgID}/BWA/"
 
-    //scratch use_scratch
+    scratch true
 
     input:
     set indivID, sampleID, libraryID, rgID, platform_unit, platform, platform_model, run_date, center,file(fastqR1),file(fastqR2) from inputBwa
@@ -133,9 +135,10 @@ process runBwa {
     this_chunk = fastqR1.getName().split("-")[0].substring(0,4)
     outfile = sampleID + "_" + libraryID + "_" + rgID + "_" + this_chunk + ".aligned.bam"
     outfile_index = outfile + ".bai"
+    dict_file = REF.getBaseName() + ".dict"
 
     """
-	bwa mem -M -R "@RG\\tID:${rgID}\\tPL:ILLUMINA\\tPU:${platform_unit}\\tSM:${indivID}_${sampleID}\\tLB:${libraryID}\\tDS:${REF}\\tCN:${center}" -t ${task.cpus} ${REF} $fastqR1 $fastqR2 | samtools sort -m 4G -@ 4 -o $outfile - 
+	bwa mem -H $dict_file -M -R "@RG\\tID:${rgID}\\tPL:ILLUMINA\\tPU:${platform_unit}\\tSM:${indivID}_${sampleID}\\tLB:${libraryID}\\tDS:${REF}\\tCN:${center}" -t ${task.cpus} ${REF} $fastqR1 $fastqR2 | samtools sort -m 4G -@ 4 -o $outfile - 
 	samtools index $outfile
     """
 }
@@ -146,6 +149,8 @@ process runFixTags {
 
 	tag "${indivID}|${sampleID}|${params.assembly}"
 	
+	scratch true
+
 	input:
     	set indivID, sampleID, file(aligned_bam_list) from inputFixTags
 
@@ -170,6 +175,8 @@ process runFixTags {
 		--IS_BISULFITE_SEQUENCE false
 
 		samtools index $bam_fixed
+		rm -f merged.bam
+
 	"""
 }
 
@@ -179,7 +186,7 @@ process runMarkDuplicates {
     tag "${indivID}|${sampleID}|${params.assembly}"
     // publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/Processing/MarkDuplicates", mode: 'copy'
 
-    //scratch use_scratch
+    scratch true
 
     input:
     set indivID, sampleID, file(bam), file(bai) from inputMarkDuplicates
@@ -191,9 +198,9 @@ process runMarkDuplicates {
     file(outfile_md5) into MarkDuplicatesMD5
     
     script:
-    outfile_bam = sampleID + ".dedup.bam"
-    outfile_bai = sampleID + ".dedup.bai"
-    outfile_md5 = sampleID + ".dedup.bam.md5"
+    outfile_bam = indivID + "." + sampleID + ".dedup.bam"
+    outfile_bai = indivID + "." + sampleID + ".dedup.bai"
+    outfile_md5 = indivID + "." + sampleID + ".dedup.bam.md5"
 
     outfile_metrics = sampleID + "_duplicate_metrics.txt"	
 
@@ -229,7 +236,7 @@ process runBaseRecalibrator {
     
     	script:
         region_tag = region.getName().split("-")[0]
-    	recal_table = sampleID + "." + region_tag + ".recal_table.txt" 
+    	recal_table = indivID + "." + sampleID + "." + region_tag + ".recal_table.txt" 
        
     	"""
 		gatk --java-options "-Xmx${task.memory.toGiga()}G" BaseRecalibrator \
@@ -278,7 +285,7 @@ inputForApplyBQSR = MergedReport.join(BamForBQSR, by: [0,1])
 process runApplyBQSR {
 
 	tag "${indivID}|${sampleID}|${params.assembly}"
-	publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/", mode: 'copy'
+	publishDir "${OUTDIR}/${params.assembly}/cram/", mode: 'copy'
 
 	scratch use_scratch
 	    
@@ -289,9 +296,9 @@ process runApplyBQSR {
 	set indivID, sampleID, file(outfile_bam), file(outfile_bai) into BamForWGSStats
 	            
     	script:
-    	outfile_bam = sampleID + ".clean.cram"
-    	outfile_bai = sampleID + ".clean.cram.bai"
-	outfile_md5 = sampleID + ".clean.cram.md5"
+    	outfile_bam = indivID + "." + sampleID + ".clean.cram"
+    	outfile_bai = indivID + "." + sampleID + ".clean.cram.bai"
+	outfile_md5 = indivID + "." + sampleID + ".clean.cram.md5"
           
     	"""
           gatk --java-options "-Xmx${task.memory.toGiga()}G" ApplyBQSR \
@@ -327,6 +334,7 @@ process runApplyBQSR {
 process runWgsCoverage {
 
 	tag "${indivID}|${sampleID}|${params.assembly}"
+        publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/picard_stats", mode: 'copy'
 
 	input:
 	set val(indivID),val(sampleID),val(bam),val(bai) from BamForWGSStats

@@ -124,6 +124,8 @@ process runGenotypeGVCFs {
   
 	tag "ALL|${params.assembly}|batch: ${region_tag}"
 	publishDir "${OUTDIR}/${params.assembly}/Variants/JointGenotypes/PerRegion"
+
+        scratch use_scratch
   
 	input:
 	set region,file(genodb) from inputJoinedGenotyping
@@ -286,7 +288,7 @@ process runSplitVcfHardFilter {
 	file("*.vcf.gz") into outputSplitVcfHardFilter
 
 	"""
-		for sample in `bcftools query -l $vcf`; do gatk SelectVariants -sn $sample -V $vcf -O $sample'.vcf.gz' --remove-unused-alternates --exclude-non-variants -OVI -R $REF ; done;
+		for sample in `bcftools query -l $vcf`; do gatk SelectVariants -sn \$sample -V $vcf -O \$sample'.vcf.gz' --remove-unused-alternates --exclude-non-variants -OVI -R $REF ; done;
 	"""
 
 }

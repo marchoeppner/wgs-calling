@@ -1,15 +1,13 @@
 ![](images/ikmb_bfx_logo.png)
 
-DISCLAIMER: This pipeline is not currently documented enough for just anyone to run it. There are certain prerequisites that need to be set up somehwat manually. If there is interest to use this, please get in touch. 
-
 # IKMB WGS variant calling  pipeline 
 
 This pipeline generates variant calls from short read files. 
 
 Tools and versions:
 
-GATK 4.0.9.0
-Samtools 1.5
+GATK 4.1.0.0
+Samtools 1.9
 
 ## Running the pipeline
 
@@ -31,7 +29,7 @@ This pipeline supports two reference assemblies:
 
 `GRCh37` - the gold-standard reference originally used by the 1000 Genomes consortium. This assembly includes numerous decoy sequences and some non-reference haplotypes. 
 
-`hg38` - the current version of the human genome assembly, including all ALT contigs and HLA regions. 
+`hg38` - the current version of the human genome assembly, but without ALT contigs. 
 
 Variants for both assemblies are only called in pre-defined intervals, limited to the canonical chromosomes and skipping regions such as centromeres etc. 
 
