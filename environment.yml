@@ -6,7 +6,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - conda-forge::openjdk=8.0.152 # Needed for FastQC - conda build hangs without this
+  - conda-forge::openjdk=8.0.192 # Needed for FastQC - conda build hangs without this
   - fastqc=0.11.8
   - fastp=0.19.4
   - picard=2.18.17
