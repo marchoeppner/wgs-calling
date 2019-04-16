@@ -19,8 +19,8 @@ if (params.genomes.containsKey(params.assembly) == false) {
 
 REF = file(params.genomes[ params.assembly ].fasta)
 DBSNP = file(params.genomes[ params.assembly ].dbsnp )
-INTERVALS = file(params.genomes[params.assembly ].intervals )
-INTERVAL_CHUNKS = file(params.genomes[params.assembly ].interval_chunks )
+INTERVALS = file(params.genomes[params.assemly].intervals)
+
 
 // ******************
 // Misc
@@ -30,14 +30,6 @@ params.email = false
 
 // Whether to use a local scratch disc
 use_scratch = params.scratch
-
-// Collect validated intervals for calling
-// drastically increases parallelism
-regions = [] 
-file(INTERVAL_CHUNKS).eachFile() { file ->
-	 regions << file
-}
-regions.sort()
 
 // Make sure the Nextflow version is current enough
 try {
@@ -72,6 +64,8 @@ Channel.from(inputFile)
 // ------------------------------------------------------------------------------------------------------------
 // Haplotype Caller for raw genomic variants
 // ------------------------------------------------------------------------------------------------------------
+
+regions = Channel.fromPath(INTERVALS).splitText(by: 1)
 
 process runHCSample {
 

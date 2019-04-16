@@ -25,7 +25,8 @@ OMNI = file(params.genomes[ params.assembly ].omni )
 HAPMAP = file(params.genomes[ params.assembly ].hapmap )
 AXIOM = file(params.genomes[ params.assembly ].axiom )
 INTERVALS = file(params.genomes[params.assembly ].intervals )
-INTERVAL_CHUNKS = file(params.genomes[params.assembly ].interval_chunks )
+
+regions = Channel.fromPath(INTERVALS).splitText(by: 1)
 
 // Rules for hard filtering
 SNP_RULES = params.snp_filter_rules
@@ -43,14 +44,6 @@ params.email = false
 
 // Whether to use a local scratch disc
 use_scratch = params.scratch
-
-// Collect validated intervals for calling
-// drastically increases parallelism
-regions = []
-file(INTERVAL_CHUNKS).eachFile() { file ->
-         regions << file
-}
-regions.sort()
 
 // Make sure the Nextflow version is current enough
 try {

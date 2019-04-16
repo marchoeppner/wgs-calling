@@ -22,8 +22,7 @@ REF = file(params.genomes[ params.assembly ].fasta)
 DBSNP = file(params.genomes[ params.assembly ].dbsnp )
 G1K = file(params.genomes[ params.assembly ].g1k )
 MILLS = file(params.genomes[ params.assembly ].mills )
-INTERVALS = file(params.genomes[params.assembly ].intervals )
-INTERVAL_CHUNKS = file(params.genomes[params.assembly ].interval_chunks )
+INTERVALS = file(params.genomes[ params.assembly ].intervals )
 
 // ******************
 // Misc
@@ -52,11 +51,8 @@ use_scratch = params.scratch
 
 // Collect validated intervals for calling
 // drastically increases parallelism
-regions = []
-file(INTERVAL_CHUNKS).eachFile() { file ->
-         regions << file
-}
-regions.sort()
+regions = Channel.fromPath(INTERVALS).splitText( by: 1)
+
 
 // Make sure the Nextflow version is current enough
 try {
