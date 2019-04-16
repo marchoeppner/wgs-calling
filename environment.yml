@@ -1,6 +1,6 @@
 # You can use this file to create a conda environment for this pipeline:
 #   conda env create -f environment.yml
-name: ikmb-wgs-calling-1.1
+name: wgs-calling-1.0
 channels:
   - bioconda
   - conda-forge
