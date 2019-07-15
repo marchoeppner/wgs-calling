@@ -26,7 +26,14 @@ HAPMAP = file(params.genomes[ params.assembly ].hapmap )
 AXIOM = file(params.genomes[ params.assembly ].axiom )
 INTERVALS = file(params.genomes[params.assembly ].intervals )
 
-regions = Channel.fromPath(INTERVALS).splitText(by: 1)
+regions = []
+// Make the region files
+INTERVALS.eachLine { str ->
+        if(! str.startsWith("@") ) {
+                data = str.split("\t")
+                regions << "${data[0]}:${data[1]}-${data[2]}"
+        }
+}
 
 // Rules for hard filtering
 SNP_RULES = params.snp_filter_rules
@@ -98,8 +105,8 @@ process runGenomicsDBImport  {
         set region,file(genodb) into inputJoinedGenotyping
 
 	script:
- 	region_tag = region.getName().split("-")[0]	
-	genodb = "genodb_${region_tag}"
+ 	region_tag = region.trim()	
+	genodb = "genodb_${region_tag.replaceAll(':','_')}"
 
 	"""
 		gatk --java-options "-Xmx${task.memory.toGiga()}G" GenomicsDBImport  \
@@ -127,7 +134,7 @@ process runGenotypeGVCFs {
 	file(gvcf) into inputCombineVariantsFromGenotyping
   
 	script:
-        region_tag = region.getName().split("-")[0]  
+        region_tag = region.trim()
 	gvcf = "genotypes.${region_tag}.g.vcf.gz"
   
 	"""
@@ -162,7 +169,7 @@ process combineVariantsFromGenotyping {
 
         def sorted_vcf = [ ]
 	regions.each { region -> 
-		region_tag = region.getName().split("-")[0]
+		region_tag = region.trim()
 		this_vcf = "genotypes.${region_tag}.g.vcf.gz"
 		sorted_vcf << vcf_files.find { it =~ this_vcf }
 	}
@@ -251,7 +258,6 @@ process runMergeHardFilterVcf {
         set file(indels),file(indels_index) from outputHardFilterIndel
 	set file(snps),file(snps_index) from outputHardFilterSnp
 
-
         output:
         set file(vcf_merged),file(vcf_merged_index) into outputHardFilter
 
@@ -311,10 +317,10 @@ process runRecalibrationModeSNP {
                 -mode SNP \
 		--trust-all-polymorphic \
 		-L $INTERVALS \
-		--resource hapmap,known=false,training=true,truth=true,prior=15:$HAPMAP \
-		--resource omni,known=false,training=true,truth=true,prior=12:$OMNI \
-		--resource 1000G,known=false,training=true,truth=false,prior=10:$G1K \
-		--resource dbsnp,known=true,training=false,truth=false,prior=7:$DBSNP \
+		--resource:hapmap,known=false,training=true,truth=true,prior=15 $HAPMAP \
+		--resource:omni,known=false,training=true,truth=true,prior=12 $OMNI \
+		--resource:1000G,known=false,training=true,truth=false,prior=10 $G1K \
+		--resource:dbsnp,known=true,training=false,truth=false,prior=7 $DBSNP \
                 -tranche ${params.snp_recalibration_tranche_values.join(' -tranche ')} \
   	"""
 }
@@ -344,9 +350,9 @@ process runRecalibrationModeIndel {
 		-an ${indel_recalbration_values.join(' -an ')} \
        	        -mode INDEL \
 		-L $INTERVALS \
-                --resource mills,known=false,training=true,truth=true,prior=12.0:$MILLS \
-		--resource axiomPoly,known=false,training=true,truth=false,prior=10:$AXIOM \
-               	--resource dbsnp,known=true,training=false,truth=false,prior=2:$DBSNP \
+                --resource:mills,known=false,training=true,truth=true,prior=12.0 $MILLS \
+		--resource:axiomPoly,known=false,training=true,truth=false,prior=10 $AXIOM \
+               	--resource:dbsnp,known=true,training=false,truth=false,prior=2 $DBSNP \
 		-tranche ${params.indel_recalibration_tranche_values.join(' -tranche ')} \
 		-max-gaussians 3 \
 		--trust-all-polymorphic

@@ -2,7 +2,7 @@
 
 inputFile = file(params.samples)
 
-params.outdir = "alignments"
+params.outdir = "genome_variants"
 
 OUTDIR = file(params.outdir)
 
@@ -20,17 +20,22 @@ if (params.genomes.containsKey(params.assembly) == false) {
 }
 
 REF = file(params.genomes[ params.assembly ].fasta)
+DICT = REF.getBaseName() + ".dict"
 DBSNP = file(params.genomes[ params.assembly ].dbsnp )
 G1K = file(params.genomes[ params.assembly ].g1k )
 MILLS = file(params.genomes[ params.assembly ].mills )
+OMNI = file(params.genomes[ params.assembly ].omni )
+HAPMAP = file(params.genomes[ params.assembly ].hapmap )
+AXIOM = file(params.genomes[ params.assembly ].axiom )
+
 INTERVALS = file(params.genomes[ params.assembly ].intervals )
 
 // This is a bit simplistic and uses each interval , instead of pooling smaller intervals into one job. 
 regions = []
-// Make the region files
+
 INTERVALS.eachLine { str ->
         if(! str.startsWith("@") ) {
-                data = str.split("\t")
+                data = str.trim().split("\t")
                 regions << "${data[0]}:${data[1]}-${data[2]}"
         }
 }
@@ -45,6 +50,17 @@ summary['Intervals'] = INTERVALS
 // Misc
 // ******************
 
+run_name = ( params.run_name == false) ? "${workflow.sessionId}" : "${params.run_name}"
+
+// Rules for hard filtering
+SNP_RULES = params.snp_filter_rules
+INDEL_RULES = params.indel_filter_rules
+
+// Annotations to use for variant recalibration
+snp_recalibration_values = params.snp_recalibration_values 
+indel_recalbration_values = params.indel_recalbration_values
+
+// Format of final alignment file
 params.format = "cram"
 
 // Whether to use a local scratch disc
@@ -63,12 +79,10 @@ try {
               "============================================================"
 }
 
-logParams(params, "nextflow_parameters-gatk4_alignment.txt")
-
 // Header log info
 log.info "========================================="
 log.info "GATK Best Practice for Genome-Seq Preprocessing v${workflow.manifest.version}"
-log.info "Section:             		Read alignment"
+log.info "Section:             		5-dollar-genome"
 log.info "Commit hash:			$workflow.commitId"
 log.info "Nextflow Version:		$workflow.nextflow.version"
 log.info "Assembly version:		${params.assembly}"
@@ -95,8 +109,8 @@ process runFastp {
   script:
   left = file(fastqR1).getBaseName() + ".trimmed.fastq.gz"
   right = file(fastqR2).getBaseName() + ".trimmed.fastq.gz"
-  json = indivID + "_" + sampleID + "_" + libraryID + "-" + rgID + ".fastp.json"
-  html = indivID + "_" + sampleID + "_" + libraryID + "-" + rgID + ".fastp.html"
+  json = indivID + "_" + sampleID + "_" + libraryID + ".fastp.json"
+  html = indivID + "_" + sampleID + "_" + libraryID + ".fastp.html"
 
   """
 	fastp --in1 $fastqR1 --in2 $fastqR2 --out1 $left --out2 $right -w ${task.cpus} -s ${task.cpus*3} -j $json -h $html
@@ -110,7 +124,6 @@ inputBwa = outputTrimAndSplit.transpose( by: [9,10] )
 process runBwa {
 
     tag "${indivID}|${sampleID}|${libraryID}|${rgID}|${this_chunk}|${params.assembly}"
-    // publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/Processing/Libraries/${libraryID}/${rgID}/BWA/"
 
     scratch true
 
@@ -171,7 +184,6 @@ process runFixTags {
 process runMarkDuplicates {
 
     tag "${indivID}|${sampleID}|${params.assembly}"
-    // publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/Processing/MarkDuplicates", mode: 'copy'
 
     scratch true
 
@@ -209,7 +221,6 @@ process runMarkDuplicates {
 process runBaseRecalibrator {
 
 	tag "${indivID}|${sampleID}|${params.assembly}|batch: ${region_tag}"
-    	// publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/Processing/BaseRecalibrator/batches", mode: 'copy'
 
     	scratch true
 	    
@@ -232,7 +243,7 @@ process runBaseRecalibrator {
 		--known-sites ${MILLS} \
 		--known-sites ${DBSNP} \
 		--use-original-qualities \
-		-L $region_tag \
+		-L $region \
 		-ip 150 \
 		--output ${recal_table}
 	"""
@@ -243,7 +254,6 @@ ReportsBySample = outputBaseRecalibrator.groupTuple(by: [0,1])
 process runGatherBQSRReports {
 
 	tag "${indivID}|${sampleID}|${params.assembly}|ALL"
-        // publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/Processing/BaseRecalibrator/"
 
 	input:
 	set indivID,sampleID,file(reports) from ReportsBySample
@@ -280,7 +290,7 @@ process runApplyBQSR {
 	set indivID, sampleID, file(recal_table), file(realign_bam) from inputForApplyBQSR
 
 	output:
-	set indivID, sampleID, file(outfile_bam), file(outfile_bai) into BamForWGSStats
+	set indivID, sampleID, file(outfile_bam), file(outfile_bai) into BamForWGSStats,inputHCSample
 	            
     	script:
     	outfile_bam = indivID + "." + sampleID + ".clean.cram"
@@ -293,13 +303,228 @@ process runApplyBQSR {
              --static-quantized-quals 10 --static-quantized-quals 20 --static-quantized-quals 30 \
              --use-original-qualities \
              --input ${realign_bam} \
-	     -L $INTERVALS \
              -bqsr ${recal_table} \
              --output ${outfile_bam} \
              -OBM true \
 	     -OVM true
     	"""	
 } 
+
+process runHCSample {
+
+	tag "${indivID}|${sampleID}|${params.assembly}|batch: ${region_tag}"
+
+	// scratch use_scratch
+
+	input:
+	set indivID,sampleID,bam,bai from inputHCSample
+	each region from regions
+
+	output:
+	set val(region_tag),file(vcf),file(vcf_index) into inputCombineVariants
+
+	script:
+	region_tag = region.trim()
+	vcf = indivID + "_" + sampleID + "." + region_tag + ".raw_variants.g.vcf.gz"
+	vcf_index = vcf + ".tbi"
+
+	""" 
+	gatk --java-options "-Xms16G -Xmx${task.memory.toGiga()}G" HaplotypeCaller \
+		-R $REF \
+		-I $bam \
+		--intervals $region_tag \
+		-O $vcf \
+		-OVI true \
+		-ERC GVCF
+	"""  
+
+}
+
+// gather all gvcfs for a given calling interval
+VariantsPerRegion = inputCombineVariants.groupTuple()
+
+process runGenomicsDBImport  {
+
+	tag "ALL|${params.assembly}|batch: ${region_tag}"
+        publishDir "${OUTDIR}/${params.assembly}/Variants/GenomicsDB"
+	
+	scratch use_scratch 
+
+	input:
+	set val(region),file(vcf_list),file(indices) from VariantsPerRegion
+
+	output:
+        set region,file(genodb) into inputJoinedGenotyping
+
+	script:
+ 	region_tag = region.trim()
+	genodb = "genodb_${region_tag}"
+
+	"""
+		gatk --java-options "-Xmx${task.memory.toGiga()}G" GenomicsDBImport  \
+		--variant ${vcf_list.join(" --variant ")} \
+		--reference $REF \
+		-L $region_tag \
+		--genomicsdb-workspace-path $genodb \
+	"""
+
+}
+
+// Perform genotyping on a per interval basis
+
+process runGenotypeGVCFs {
+  
+	tag "ALL|${params.assembly}|batch: ${region_tag}"
+	publishDir "${OUTDIR}/${params.assembly}/Variants/JointGenotypes/PerRegion"
+
+        scratch use_scratch
+  
+	input:
+	set region,file(genodb) from inputJoinedGenotyping
+  
+	output:
+	file(gvcf) into inputCombineVariantsFromGenotyping
+  
+	script:
+        region_tag = region.trim()
+	gvcf = "genotypes.${region_tag}.g.vcf.gz"
+  
+	"""
+ 	gatk --java-options "-Xmx${task.memory.toGiga()}G" GenotypeGVCFs \
+		--reference $REF \
+		--only-output-calls-starting-in-intervals \
+		--use-new-qual-calculator \
+		--dbsnp $DBSNP \
+		-V gendb://${genodb} \
+               	--output $gvcf \
+                -G StandardAnnotation \
+		-L $region_tag \
+		-OVI true
+  	"""
+}
+
+// Merging the scatter-gather VCF files into one file
+
+process combineVariantsFromGenotyping {
+	tag "ALL"
+	publishDir "${OUTDIR}/${params.assembly}/Variants/JointGenotypes", mode: 'copy'
+
+	input:
+	file(vcf_files) from inputCombineVariantsFromGenotyping.collect()
+
+	output:
+	set file(gvcf),file(gvcf_index) into (inputRecalSNP , inputRecalIndel, inputHardFilterSnp, inputHardFilterIndel )
+
+	script:
+	gvcf = "genotypes.merged.vcf.gz"
+	gvcf_index = gvcf + ".tbi"
+
+        def sorted_vcf = [ ]
+	regions.each { region -> 
+		region_tag = region.trim()
+		this_vcf = "genotypes.${region_tag}.g.vcf.gz"
+		sorted_vcf << vcf_files.find { it =~ this_vcf }
+	}
+
+	"""
+		gatk GatherVcfsCloud \
+			-I ${sorted_vcf.join(" -I ")} \
+			--output $gvcf \
+		gatk IndexFeatureFile -F $gvcf
+	"""
+}
+
+process runHardFilterSNP {
+
+	tag "ALL"
+	publishDir "${OUTDIR}/${params.assembly}/Variants/HardFilter", mode: 'copy'
+
+	input:
+	set file(vcf),file(index) from inputHardFilterSnp
+	
+	output:
+	set file(vcf_filtered),file(vcf_filtered_index) into outputHardFilterSnp
+
+	script:
+	vcf_filtered = "genotypes.hard_filter.snp.vcf.gz"
+	vcf_filtered_index = vcf_filtered + ".tbi"
+
+	"""
+		gatk SelectVariants \
+                        --select-type SNP \
+                        -V $vcf \
+                        -O snps.vcf.gz \
+                        -OVI
+		 gatk VariantFiltration \
+                      -R $REF \
+                      -V snps.vcf.gz \
+                      -O $vcf_filtered \
+                      --filter-expression "${SNP_RULES}" \
+                      --filter-name "hard_snp_filter" \
+                      -OVI true
+	"""
+	
+}
+
+process runHardFilterIndel {
+
+	tag "ALL"
+        publishDir "${OUTDIR}/${params.assembly}/Variants/HardFilter", mode: 'copy'
+
+        input:
+        set file(vcf),file(index) from inputHardFilterIndel
+
+        output:
+        set file(vcf_filtered),file(vcf_filtered_index) into outputHardFilterIndel
+
+        script:
+        vcf_filtered = "genotypes.hard_filter.indel.vcf.gz"
+        vcf_filtered_index = vcf_filtered + ".tbi"
+
+        """
+		gatk SelectVariants \
+			--select-type INDEL \
+			-V $vcf \
+			-O indels.vcf.gz \
+			-OVI 
+                gatk VariantFiltration \
+                      -R $REF \
+                      -V indels.vcf.gz \
+                      -O $vcf_filtered \
+                      --filter-expression "${INDEL_RULES}" \
+                      --filter-name "hard_indel_filter" \
+                       -OVI true
+        """
+
+}
+
+process runMergeHardFilterVcf {
+
+ 	tag "ALL"
+        publishDir "${OUTDIR}/${params.assembly}/Variants/HardFilter", mode: 'copy'
+
+        input:
+        set file(indels),file(indels_index) from outputHardFilterIndel
+	set file(snps),file(snps_index) from outputHardFilterSnp
+
+
+        output:
+        set file(vcf_merged),file(vcf_merged_index) into outputHardFilter
+
+	script:
+	vcf_merged = "genotypes.hard_filter.merged.vcf.gz"
+	vcf_merged_index = vcf_merged + ".tbi"
+
+
+	"""
+		gatk --java-options "-Xmx${task.memory.toGiga()}G"  MergeVcfs \
+		-I $indels \
+		-I $snps \
+		-O $vcf_merged
+	"""
+
+}
+
 
 
 // ------------------------------------------------------------------------------------------------------------
@@ -425,12 +650,12 @@ workflow.onComplete {
         	if (workflow.success && !params.skip_multiqc) {
             		mqc_report = multiqc_report.getVal()
             		if (mqc_report.getClass() == ArrayList){
-                		log.warn "[IKMB ExoSeq] Found multiple reports from process 'multiqc', will use only one"
+                		log.warn "[IKMB GenomeSeq] Found multiple reports from process 'multiqc', will use only one"
                 		mqc_report = mqc_report[0]
                 	}
         	}
     	} catch (all) {
-        	log.warn "[IKMB ExoSeq] Could not attach MultiQC report to summary email"
+        	log.warn "[IKMB GenomeSeq] Could not attach MultiQC report to summary email"
   	}
 
 	def smail_fields = [ email: params.email, subject: subject, email_txt: email_txt, email_html: email_html, baseDir: "$baseDir", mqcFile: mqc_report, mqcMaxSize: params.maxMultiqcEmailFileSize.toBytes() ]

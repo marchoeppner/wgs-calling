@@ -21,6 +21,14 @@ REF = file(params.genomes[ params.assembly ].fasta)
 DBSNP = file(params.genomes[ params.assembly ].dbsnp )
 INTERVALS = file(params.genomes[params.assemly].intervals)
 
+regions = []
+// Make the region files
+INTERVALS.eachLine { str ->
+        if(! str.startsWith("@") ) {
+                data = str.trim().split("\t")
+                regions << "${data[0]}:${data[1]}-${data[2]}"
+        }
+}
 
 // ******************
 // Misc
@@ -82,7 +90,7 @@ process runHCSample {
   set indivID,sampleID,file(vcf),file(vcf_index) into inputCombineVariants
 
   script:
-  region_tag = region.getName().split("-")[0]
+  region_tag = region
   vcf = indivID + "_" + sampleID + "." + region_tag + ".raw_variants.g.vcf.gz"
   vcf_index = vcf + ".tbi"
 
@@ -118,7 +126,7 @@ process combineVariants {
 	// to sort the partial gvcfs into the correct order for merging
         def sorted_vcf = [ ]
 	regions.each { region -> 
-		region_tag = region.getName().split("-")[0]
+		region_tag = region.trim()
 		this_vcf = indivID + "_" + sampleID + "." + region_tag + ".raw_variants.g.vcf.gz"
 		sorted_vcf << vcf_files.find { it =~ this_vcf }
 	}
