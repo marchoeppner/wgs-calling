@@ -35,8 +35,7 @@ regions = []
 
 INTERVALS.eachLine { str ->
         if(! str.startsWith("@") ) {
-                data = str.trim().split("\t")
-                regions << "${data[0]}:${data[1]}-${data[2]}"
+                regions << str.trim()
         }
 }
 
