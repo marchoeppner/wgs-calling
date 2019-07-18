@@ -65,19 +65,6 @@ params.format = "cram"
 // Whether to use a local scratch disc
 use_scratch = params.scratch
 
-// Make sure the Nextflow version is current enough
-try {
-    if( ! nextflow.version.matches(">= $workflow.manifest.nextflowVersion") ){
-        throw GroovyException('Nextflow version too old')
-    }
-} catch (all) {
-    log.error "====================================================\n" +
-              "  Nextflow version $params.nf_required_version required! You are running v$workflow.nextflow.version.\n" +
-              "  Pipeline execution will continue, but things may break.\n" +
-              "  Please run `nextflow self-update` to update Nextflow.\n" +
-              "============================================================"
-}
-
 // Header log info
 log.info "========================================="
 log.info "GATK Best Practice for Genome-Seq Preprocessing v${workflow.manifest.version}"
@@ -96,13 +83,13 @@ process runFastp {
 
   tag "${indivID}|${sampleID}|${libraryID}"
 
-  scratch true
+  //scratch true
 
   input:
   set indivID, sampleID, libraryID, rgID, platform_unit, platform, platform_model, center, run_date, fastqR1, fastqR2 from inputFastp
 
   output:
-  set val(indivID), val(sampleID), val(libraryID), val(rgID), val(platform_unit), val(platform), val(platform_model), val(center), val(run_date),file("*{left}"),file("*${right}") into outputTrimAndSplit
+  set val(indivID), val(sampleID), val(libraryID), val(rgID), val(platform_unit), val(platform), val(platform_model), val(center), val(run_date),file("*${left}"),file("*${right}") into outputTrimAndSplit
   set indivID, sampleID, libraryID, file(json),file(html) into outputReportTrimming
 
   script:
@@ -127,14 +114,15 @@ process runBwa {
     scratch true
 
     input:
-    set indivID, sampleID, libraryID, rgID, platform_unit, platform, platform_model, run_date, center,file(fastqR1),file(fastqR2) from inputBwa
+    set val(indivID), val(sampleID), val(libraryID), val(rgID), val(platform_unit), val(platform), val(platform_model), val(center), val(run_date),file(fastqR1),file(fastqR2) from inputBwa
 
     output:
 
     set indivID, sampleID, file(outfile) into runBWAOutput
 
     script:
-    this_chunk = fastqR1.getName().split(".")[0]
+    //this_chunk = fastqR1.getName()
+    this_chunk = fastqR1.getName().substring(0,4)
     outfile = sampleID + "_" + libraryID + "_" + rgID + "_" + this_chunk + ".aligned.bam"
     outfile_index = outfile + ".bai"
     dict_file = REF.getBaseName() + ".dict"
@@ -209,7 +197,6 @@ process runMarkDuplicates {
                 -R ${REF} \
                 -M ${outfile_metrics} \
                 --CREATE_INDEX true \
-                --TMP_DIR \$TMPDIR \
                 --MAX_RECORDS_IN_RAM 1000000 \
 		--ASSUME_SORT_ORDER coordinate \
                 --CREATE_MD5_FILE true
