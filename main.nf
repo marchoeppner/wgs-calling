@@ -35,6 +35,7 @@ regions = []
 
 INTERVALS.eachLine { str ->
         if(! str.startsWith("@") ) {
+		println str.trim()
                 regions << str.trim()
         }
 }
@@ -219,7 +220,7 @@ process runBaseRecalibrator {
 	set indivID, sampleID, dedup_bam into BamForBQSR
     
     	script:
-        region_tag = region.trim()
+        region_tag = region.trim().replace(/:/, '_')
     	recal_table = indivID + "." + sampleID + "." + region_tag + ".recal_table.txt" 
        
     	"""
@@ -250,7 +251,7 @@ process runGatherBQSRReports {
 	script:
 	sorted_reports = []
 	regions.each { region ->
-                region_tag = region.trim()
+                region_tag = region.trim().replace(/:/, '_')
                 this_report = sampleID + "." + region_tag + ".recal_table.txt" 
                 sorted_reports << reports.find { it =~ this_report }
         }	
@@ -307,10 +308,10 @@ process runHCSample {
 	each region from regions
 
 	output:
-	set val(region_tag),file(vcf),file(vcf_index) into inputCombineVariants
+	set val(region),file(vcf),file(vcf_index) into inputCombineVariants
 
 	script:
-	region_tag = region.trim()
+	region_tag = region.trim().replace(/:/, '_')
 	vcf = indivID + "_" + sampleID + "." + region_tag + ".raw_variants.g.vcf.gz"
 	vcf_index = vcf + ".tbi"
 
@@ -318,7 +319,7 @@ process runHCSample {
 	gatk --java-options "-Xms16G -Xmx${task.memory.toGiga()}G" HaplotypeCaller \
 		-R $REF \
 		-I $bam \
-		--intervals $region_tag \
+		--intervals ${region.trim()} \
 		-O $vcf \
 		-OVI true \
 		-ERC GVCF
@@ -343,14 +344,14 @@ process runGenomicsDBImport  {
         set region,file(genodb) into inputJoinedGenotyping
 
 	script:
- 	region_tag = region.trim()
+ 	region_tag = region.trim().replace(/:/, '_')
 	genodb = "genodb_${region_tag}"
 
 	"""
 		gatk --java-options "-Xmx${task.memory.toGiga()}G" GenomicsDBImport  \
 		--variant ${vcf_list.join(" --variant ")} \
 		--reference $REF \
-		-L $region_tag \
+		-L ${region.trim()} \
 		--genomicsdb-workspace-path $genodb \
 	"""
 
@@ -372,7 +373,7 @@ process runGenotypeGVCFs {
 	file(gvcf) into inputCombineVariantsFromGenotyping
   
 	script:
-        region_tag = region.trim()
+        region_tag = region.trim().replace(/:/, '_')
 	gvcf = "genotypes.${region_tag}.g.vcf.gz"
   
 	"""
@@ -384,7 +385,7 @@ process runGenotypeGVCFs {
 		-V gendb://${genodb} \
                	--output $gvcf \
                 -G StandardAnnotation \
-		-L $region_tag \
+		-L ${region.trim()} \
 		-OVI true
   	"""
 }
@@ -407,7 +408,7 @@ process combineVariantsFromGenotyping {
 
         def sorted_vcf = [ ]
 	regions.each { region -> 
-		region_tag = region.trim()
+		region_tag = region.trim().replace(/:/, '_')
 		this_vcf = "genotypes.${region_tag}.g.vcf.gz"
 		sorted_vcf << vcf_files.find { it =~ this_vcf }
 	}
@@ -415,7 +416,7 @@ process combineVariantsFromGenotyping {
 	"""
 		gatk GatherVcfsCloud \
 			-I ${sorted_vcf.join(" -I ")} \
-			--output $gvcf \
+			--output $gvcf 
 		gatk IndexFeatureFile -F $gvcf
 	"""
 }
