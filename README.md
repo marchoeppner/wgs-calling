@@ -2,10 +2,9 @@
 
 # IKMB WGS variant calling  pipeline 
 
-This pipeline generates whole-genome variant calls from short read files. 
+This pipeline generates human whole-genome variant calls from short read files. 
 
 Please not that this code is not yet final!
-
 
 ### Documentation 
 

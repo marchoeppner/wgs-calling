@@ -27,11 +27,11 @@ AXIOM = file(params.genomes[ params.assembly ].axiom )
 INTERVALS = file(params.genomes[params.assembly ].intervals )
 
 regions = []
-// Make the region files
+
 INTERVALS.eachLine { str ->
         if(! str.startsWith("@") ) {
-                data = str.split("\t")
-                regions << "${data[0]}:${data[1]}-${data[2]}"
+                println str.trim()
+                regions << str.trim()
         }
 }
 
@@ -105,7 +105,7 @@ process runGenomicsDBImport  {
         set region,file(genodb) into inputJoinedGenotyping
 
 	script:
- 	region_tag = region.trim()	
+ 	region_tag = region.trim().replace(/:/, '_')
 	genodb = "genodb_${region_tag.replaceAll(':','_')}"
 
 	"""
@@ -134,7 +134,7 @@ process runGenotypeGVCFs {
 	file(gvcf) into inputCombineVariantsFromGenotyping
   
 	script:
-        region_tag = region.trim()
+        region_tag = region.trim().replace(/:/, '_')
 	gvcf = "genotypes.${region_tag}.g.vcf.gz"
   
 	"""
@@ -169,7 +169,7 @@ process combineVariantsFromGenotyping {
 
         def sorted_vcf = [ ]
 	regions.each { region -> 
-		region_tag = region.trim()
+		region_tag = region.trim().replace(/:/, '_')
 		this_vcf = "genotypes.${region_tag}.g.vcf.gz"
 		sorted_vcf << vcf_files.find { it =~ this_vcf }
 	}
