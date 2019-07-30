@@ -30,7 +30,6 @@ regions = []
 
 INTERVALS.eachLine { str ->
         if(! str.startsWith("@") ) {
-                println str.trim()
                 regions << str.trim()
         }
 }
@@ -51,19 +50,6 @@ params.email = false
 
 // Whether to use a local scratch disc
 use_scratch = params.scratch
-
-// Make sure the Nextflow version is current enough
-try {
-    if( ! nextflow.version.matches(">= $params.nextflow_required_version") ){
-        throw GroovyException('Nextflow version too old')
-    }
-} catch (all) {
-    log.error "====================================================\n" +
-              "  Nextflow version $params.nf_required_version required! You are running v$workflow.nextflow.version.\n" +
-              "  Pipeline execution will continue, but things may break.\n" +
-              "  Please run `nextflow self-update` to update Nextflow.\n" +
-              "============================================================"
-}
 
 logParams(params, "nextflow_parameters-gatk4_joint_genotyping.txt")
 

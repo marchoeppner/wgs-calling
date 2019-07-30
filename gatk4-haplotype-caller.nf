@@ -19,13 +19,12 @@ if (params.genomes.containsKey(params.assembly) == false) {
 
 REF = file(params.genomes[ params.assembly ].fasta)
 DBSNP = file(params.genomes[ params.assembly ].dbsnp )
-INTERVALS = file(params.genomes[params.assemly].intervals)
+INTERVALS = file(params.genomes[params.assembly].intervals)
 
 regions = []
 
 INTERVALS.eachLine { str ->
         if(! str.startsWith("@") ) {
-                println str.trim()
                 regions << str.trim()
         }
 }
@@ -38,21 +37,6 @@ params.email = false
 
 // Whether to use a local scratch disc
 use_scratch = params.scratch
-
-// Make sure the Nextflow version is current enough
-try {
-    if( ! nextflow.version.matches(">= $params.nextflow_required_version") ){
-        throw GroovyException('Nextflow version too old')
-    }
-} catch (all) {
-    log.error "====================================================\n" +
-              "  Nextflow version $params.nf_required_version required! You are running v$workflow.nextflow.version.\n" +
-              "  Pipeline execution will continue, but things may break.\n" +
-              "  Please run `nextflow self-update` to update Nextflow.\n" +
-              "============================================================"
-}
-
-logParams(params, "nextflow_parameters_gatk4-haplotypecaller.txt")
 
 VERSION = "0.1"
 
@@ -72,8 +56,6 @@ Channel.from(inputFile)
 // ------------------------------------------------------------------------------------------------------------
 // Haplotype Caller for raw genomic variants
 // ------------------------------------------------------------------------------------------------------------
-
-regions = Channel.fromPath(INTERVALS).splitText(by: 1)
 
 process runHCSample {
 
@@ -98,10 +80,10 @@ process runHCSample {
 	gatk --java-options "-Xms16G -Xmx${task.memory.toGiga()}G" HaplotypeCaller \
 		-R $REF \
 		-I $bam \
-		--intervals $region \
 		-O $vcf \
 		-OVI true \
-		-ERC GVCF
+		-ERC GVCF \
+		--intervals $region
   """  
 
 }
@@ -124,7 +106,7 @@ process combineVariants {
 
 	// The interval files are numbered based on their correct genomic order. We can use this
 	// to sort the partial gvcfs into the correct order for merging
-        def sorted_vcf = [ ]
+        sorted_vcf = []
 	regions.each { region -> 
 		region_tag = region.trim().replace(/:/, '_')
 		this_vcf = indivID + "_" + sampleID + "." + region_tag + ".raw_variants.g.vcf.gz"

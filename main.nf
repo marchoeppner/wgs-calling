@@ -2,15 +2,36 @@
 
 inputFile = file(params.samples)
 
-params.outdir = "genome_variants"
+params.outdir = "results"
 
 OUTDIR = file(params.outdir)
 
-params.report = true
+// Help message
+def helpMessage() {
+	log.info """
+	===============================================================================
+	IKMB WGS pipeline | version ${workflow.manifest.version}
+	===============================================================================
 
-// Specifies the underlying genome assembly
-params.assembly = "hg38"
+	Usage: nextflow run marchoeppner/wgs-calling --samples Samples.csv --assembly hg38
 
+	Required parameters:
+	--samples	A CSV formatted sample sheet (see github documentation for details)
+	--assembly 	A version of the human reference genome (see github documentation for details)
+
+	Optional parameters:
+	--email		An Email adress to which reports are sent
+
+	Output:
+	--outdir	Local directory to which all output is written (default: results)
+	""".stripIndent()
+}
+
+// Show help message
+if (params.help){
+	helpMessage()
+	exit 0
+}
 // *****************************************
 // Assembly-specific variables and resources
 // *****************************************
@@ -68,8 +89,8 @@ use_scratch = params.scratch
 
 // Header log info
 log.info "========================================="
-log.info "GATK Best Practice for Genome-Seq Preprocessing v${workflow.manifest.version}"
-log.info "Section:             		5-dollar-genome"
+log.info "GATK Best Practice for WGS variant calling: v${workflow.manifest.version}"
+log.info "Section:             		5-dollar-genome (all-in-one)"
 log.info "Commit hash:			$workflow.commitId"
 log.info "Nextflow Version:		$workflow.nextflow.version"
 log.info "Assembly version:		${params.assembly}"
