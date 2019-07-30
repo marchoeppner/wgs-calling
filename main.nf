@@ -81,11 +81,6 @@ INDEL_RULES = params.indel_filter_rules
 snp_recalibration_values = params.snp_recalibration_values 
 indel_recalbration_values = params.indel_recalbration_values
 
-// Format of final alignment file
-params.format = "cram"
-
-// Whether to use a local scratch disc
-use_scratch = params.scratch
 
 // Header log info
 log.info "========================================="
@@ -103,9 +98,7 @@ Channel.from(inputFile)
 
 process runFastp {
 
-  tag "${indivID}|${sampleID}|${libraryID}"
-
-  //scratch true
+  scratch params.scratch
 
   input:
   set indivID, sampleID, libraryID, rgID, platform_unit, platform, platform_model, center, run_date, fastqR1, fastqR2 from inputFastp
@@ -131,9 +124,7 @@ inputBwa = outputTrimAndSplit.transpose( by: [9,10] )
 // Run BWA on each trimmed chunk
 process runBwa {
 
-    tag "${indivID}|${sampleID}|${libraryID}|${rgID}|${this_chunk}|${params.assembly}"
-
-    scratch true
+    scratch params.scratch
 
     input:
     set val(indivID), val(sampleID), val(libraryID), val(rgID), val(platform_unit), val(platform), val(platform_model), val(center), val(run_date),file(fastqR1),file(fastqR2) from inputBwa
@@ -159,9 +150,7 @@ inputFixTags = runBWAOutput.groupTuple(by: [0,1])
 
 process runFixTags {
 
-	tag "${indivID}|${sampleID}|${params.assembly}"
-	
-	scratch true
+	scratch params.scratch
 
 	input:
     	set indivID, sampleID, file(aligned_bam_list) from inputFixTags
@@ -192,9 +181,7 @@ process runFixTags {
 // Mark duplicate reads. This uses a discontinuted implementation of MD to fully leverage CRAM format
 process runMarkDuplicates {
 
-    tag "${indivID}|${sampleID}|${params.assembly}"
-
-    scratch true
+    scratch params.scratch
 
     input:
     set indivID, sampleID, file(bam), file(bai) from inputMarkDuplicates
@@ -228,9 +215,7 @@ process runMarkDuplicates {
 // Generate a model for base recalibration within target intervals
 process runBaseRecalibrator {
 
-	tag "${indivID}|${sampleID}|${params.assembly}|batch: ${region_tag}"
-
-    	scratch true
+    	scratch params.scratch
 	    
     	input:
     	set indivID, sampleID, dedup_bam, dedup_bai from runMarkDuplicatesOutput
@@ -261,8 +246,6 @@ ReportsBySample = outputBaseRecalibrator.groupTuple(by: [0,1])
 
 process runGatherBQSRReports {
 
-	tag "${indivID}|${sampleID}|${params.assembly}|ALL"
-
 	input:
 	set indivID,sampleID,file(reports) from ReportsBySample
 
@@ -289,10 +272,9 @@ inputForApplyBQSR = MergedReport.join(BamForBQSR, by: [0,1])
 
 process runApplyBQSR {
 
-	tag "${indivID}|${sampleID}|${params.assembly}"
 	publishDir "${OUTDIR}/${params.assembly}/cram/", mode: 'copy'
 
-	scratch true
+	scratch params.scratch
 	    
 	input:
 	set indivID, sampleID, file(recal_table), file(realign_bam) from inputForApplyBQSR
@@ -320,9 +302,7 @@ process runApplyBQSR {
 
 process runHCSample {
 
-	tag "${indivID}|${sampleID}|${params.assembly}|batch: ${region_tag}"
-
-	// scratch use_scratch
+	scratch params.scratch
 
 	input:
 	set indivID,sampleID,bam,bai from inputHCSample
@@ -353,10 +333,9 @@ VariantsPerRegion = inputCombineVariants.groupTuple()
 
 process runGenomicsDBImport  {
 
-	tag "ALL|${params.assembly}|batch: ${region_tag}"
         publishDir "${OUTDIR}/${params.assembly}/Variants/GenomicsDB"
 	
-	scratch use_scratch 
+	scratch params.scratch
 
 	input:
 	set val(region),file(vcf_list),file(indices) from VariantsPerRegion
@@ -382,10 +361,9 @@ process runGenomicsDBImport  {
 
 process runGenotypeGVCFs {
   
-	tag "ALL|${params.assembly}|batch: ${region_tag}"
 	publishDir "${OUTDIR}/${params.assembly}/Variants/JointGenotypes/PerRegion"
 
-        scratch use_scratch
+        scratch params.scratch
   
 	input:
 	set region,file(genodb) from inputJoinedGenotyping
@@ -414,7 +392,7 @@ process runGenotypeGVCFs {
 // Merging the scatter-gather VCF files into one file
 
 process combineVariantsFromGenotyping {
-	tag "ALL"
+
 	publishDir "${OUTDIR}/${params.assembly}/Variants/JointGenotypes", mode: 'copy'
 
 	input:
@@ -444,7 +422,6 @@ process combineVariantsFromGenotyping {
 
 process runHardFilterSNP {
 
-	tag "ALL"
 	publishDir "${OUTDIR}/${params.assembly}/Variants/HardFilter", mode: 'copy'
 
 	input:
@@ -476,7 +453,6 @@ process runHardFilterSNP {
 
 process runHardFilterIndel {
 
-	tag "ALL"
         publishDir "${OUTDIR}/${params.assembly}/Variants/HardFilter", mode: 'copy'
 
         input:
@@ -508,7 +484,6 @@ process runHardFilterIndel {
 
 process runMergeHardFilterVcf {
 
- 	tag "ALL"
         publishDir "${OUTDIR}/${params.assembly}/Variants/HardFilter", mode: 'copy'
 
         input:
@@ -553,7 +528,6 @@ process runMergeHardFilterVcf {
 
 process runWgsCoverage {
 
-	tag "${indivID}|${sampleID}|${params.assembly}"
         publishDir "${OUTDIR}/${params.assembly}/${indivID}/${sampleID}/picard_stats", mode: 'copy'
 
 	input:
@@ -576,8 +550,7 @@ process runWgsCoverage {
 
 process runMultiQCLibrary {
 
-    tag "Generating library level summary and QC plots"
-	publishDir "${OUTDIR}/Summary/Library", mode: 'copy'
+    publishDir "${OUTDIR}/Summary/Library", mode: 'copy'
 	    
     input:
     file('*') from runMarkDuplicatesOutput_QC.flatten().toList()
