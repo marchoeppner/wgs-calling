@@ -56,7 +56,6 @@ regions = []
 
 INTERVALS.eachLine { str ->
         if(! str.startsWith("@") ) {
-		println str.trim()
                 regions << str.trim()
         }
 }

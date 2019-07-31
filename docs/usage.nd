@@ -1,0 +1,25 @@
+![](images/ikmb_bfx_logo.png)
+
+# Usage
+
+## Sample sheet
+
+This pipeline requires a sample sheet in CSV format providing information on which read files belng to which sample. 
+
+The general format looks as follows:
+
+```bash
+
+IndivID;SampleID;libraryID;rgID;rgPU;platform;platform_model;Center;Date;R1;R2
+
+```
+
+## Execution
+
+If your cluster profile is already part of this code base, you can simply run this pipeline like so:
+
+`
+nextflow run marchoeppner/wgs-calling --samples Samples.csv --assembly GRCh38 
+`
+
+
