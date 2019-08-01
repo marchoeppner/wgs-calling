@@ -208,7 +208,9 @@ process runMarkDuplicates {
                 --MAX_RECORDS_IN_RAM 1000000 \
 		--ASSUME_SORT_ORDER coordinate \
                 --CREATE_MD5_FILE true \
-		--TMP_DIR \$TMPDIR \
+		--TMP_DIR tmpdir 
+
+		rm -Rf tmpdir
         """
 }
 
