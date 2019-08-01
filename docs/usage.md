@@ -1,4 +1,4 @@
-![](images/ikmb_bfx_logo.png)
+![](../images/ikmb_bfx_logo.png)
 
 # Usage
 
