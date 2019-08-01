@@ -9,5 +9,8 @@ folder containing the various assembly-specific sub folders will be needed later
 
 ## Config file
 
-tbd
+Several config files are used to provide information on compute setup and locatio of references. 
+
+At the IKMB, you do not have to specify a profile, the default will work. 
+
 
