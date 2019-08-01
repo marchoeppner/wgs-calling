@@ -90,7 +90,7 @@ process runHCSample {
 
 VariantsPerSample = inputCombineVariants.groupTuple(by: [0,1])
 
-process combineVariants {
+process combineVariantsFromGenotyping {
 	tag "${indivID}|${params.assembly}"
 	publishDir "${OUTDIR}/${params.assembly}/HC", mode: 'copy'
 
