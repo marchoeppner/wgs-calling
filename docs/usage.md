@@ -32,4 +32,9 @@ If your cluster profile is already part of this code base, you can simply run th
 nextflow run marchoeppner/wgs-calling --samples Samples.csv --assembly GRCh38 
 `
 
+The total run time depends on the size of your cluster and the speed of the underlying storage system/networking. Please be advised that, by design,
+nextflows keeps all of the intermediate files in the work/ subdirectory. Running a just a dozen or so WGS data sets will therefore require a temporary
+storage space of several TBs. Most of that will be removed when you delete work/ after the pipeline has finished. Still, each 30X data set will require around
+300GB after all is said and done - and that is with the highly compressed CRAM format for the read alignments, instead of BAM. 
+
 
